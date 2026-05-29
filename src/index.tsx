@@ -61,6 +61,9 @@ export type ExceptionPayload = {
   deviceInfo: ExtraData;
   screenInfo: ExtraData;
   networkInfo: ExtraData;
+  memoryInfo?: ExtraData;
+  storageInfo?: ExtraData;
+  batteryInfo?: ExtraData;
   userInfo: ExtraData;
   metadata: ExtraData;
   otherDetails: ExtraData;
@@ -188,6 +191,33 @@ const getBrowserAndOs = (userAgent = "") => {
   return { browserName, osName };
 };
 
+const getFormattedOsName = (osName?: string, osVersion?: unknown) => {
+  const normalized = (osName || "Unknown OS").toLowerCase();
+  let label = osName || "Unknown OS";
+
+  if (normalized === "macos" || normalized === "mac os" || normalized === "mac")
+    label = "macOS";
+  else if (normalized === "ios") label = "iOS";
+  else if (normalized === "android") label = "Android";
+  else if (normalized === "windows" || normalized === "win") label = "Windows";
+  else if (normalized === "linux") label = "Linux";
+
+  const version = firstString(osVersion);
+  return version && version !== "Unknown" ? `${label} ${version}` : label;
+};
+
+const getReactDeviceModel = (osName: string, userAgent: string) => {
+  if (/iPad/i.test(userAgent)) return "iPad";
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/Android/i.test(userAgent)) return "Android Device";
+  if (osName === "macOS") return "macOS Desktop";
+  if (osName === "Windows") return "Windows PC";
+  if (osName === "Linux") return "Linux Desktop";
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent)
+    ? "Mobile Browser"
+    : "Desktop Browser";
+};
+
 const getRuntimeInfo = () => {
   const capacitor = getGlobalValue("Capacitor") as
     | {
@@ -267,6 +297,24 @@ const getNetworkInfo = (): ExtraData => {
     rtt: connection?.rtt || "Unknown",
     saveData: connection?.saveData || false,
   };
+};
+
+const getStorageEstimate = async () => {
+  if (!isBrowser() || !navigator.storage?.estimate) {
+    return undefined;
+  }
+
+  try {
+    const estimate = await navigator.storage.estimate();
+    return {
+      quota: estimate.quota,
+      usage: estimate.usage,
+      usageDetails: (estimate as StorageEstimate & { usageDetails?: unknown })
+        .usageDetails,
+    };
+  } catch {
+    return undefined;
+  }
 };
 
 const getUserAgentData = (): ExtraData | null => {
@@ -410,6 +458,29 @@ const getPerformanceInfo = () => {
   };
 };
 
+const getMemoryInfo = (): ExtraData => {
+  if (!isBrowser()) return {};
+
+  const memory = (
+    performance as Performance & {
+      memory?: {
+        jsHeapSizeLimit?: number;
+        totalJSHeapSize?: number;
+        usedJSHeapSize?: number;
+      };
+    }
+  ).memory;
+
+  return {
+    deviceMemory: (navigator as Navigator & { deviceMemory?: number })
+      .deviceMemory,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    jsHeapSizeLimit: memory?.jsHeapSizeLimit,
+    totalJSHeapSize: memory?.totalJSHeapSize,
+    usedJSHeapSize: memory?.usedJSHeapSize,
+  };
+};
+
 const getHistoryInfo = () => {
   if (!isBrowser()) return {};
 
@@ -531,6 +602,18 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
       deviceInfo?.model,
       payload.deviceId,
     );
+    const nativeOsName = firstString(
+      deviceInfo?.operatingSystem,
+      payload.osInfo.osName,
+    );
+    const nativeOsVersion = firstString(deviceInfo?.osVersion);
+    const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
+    const nativeDeviceModel =
+      firstString(deviceInfo?.name, deviceInfo?.model) ||
+      (nativeOsName?.toLowerCase() === "ios" ? "iOS Device" : undefined) ||
+      (nativeOsName?.toLowerCase() === "android" ? "Android Device" : undefined) ||
+      payload.deviceInfo.model;
+    const nativeStorageInfo = await getStorageEstimate();
 
     return {
       ...payload,
@@ -540,31 +623,47 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
       browserInfo: {
         ...payload.browserInfo,
         name: `Capacitor WebView (${runtimeInfo.platform})`,
-        version: deviceInfo?.webViewVersion || payload.browserInfo.version,
-        language: languageInfo?.value || payload.browserInfo.language,
+        version:
+          firstString(deviceInfo?.webViewVersion, payload.browserInfo.version) ||
+          "Unknown",
+        language:
+          firstString(languageInfo?.value, payload.browserInfo.language) ||
+          undefined,
       },
       osInfo: {
         ...payload.osInfo,
-        osName: deviceInfo?.operatingSystem || payload.osInfo.osName,
-        osVersion: deviceInfo?.osVersion,
-        platform: deviceInfo?.platform || runtimeInfo.platform,
-        apiLevel: deviceInfo?.androidSDKVersion,
+        name: nativeSystemName,
+        osName: nativeOsName || payload.osInfo.osName,
+        osVersion: nativeOsVersion,
+        platform: firstString(deviceInfo?.platform, runtimeInfo.platform),
+        apiLevel: firstString(deviceInfo?.androidSDKVersion),
       },
       deviceInfo: {
         ...payload.deviceInfo,
         ...deviceInfo,
         deviceId: nativeDeviceId || payload.deviceId,
         manufacturer: deviceInfo?.manufacturer,
-        model: deviceInfo?.model || deviceInfo?.name,
-        systemName: deviceInfo?.platform,
-        systemVersion: deviceInfo?.osVersion,
+        model: nativeDeviceModel,
+        modelId: deviceInfo?.model,
+        systemName: nativeSystemName,
+        systemVersion: nativeOsVersion,
         isVirtual: deviceInfo?.isVirtual,
         deviceType: "mobile",
+        webViewVersion: deviceInfo?.webViewVersion,
       },
+      storageInfo: nativeStorageInfo,
+      batteryInfo,
       metadata: {
         ...payload.metadata,
         capacitorDetails: "resolved",
         batteryInfo,
+        storageInfo: nativeStorageInfo,
+        appInfo,
+      },
+      otherDetails: {
+        ...payload.otherDetails,
+        batteryInfo,
+        storageInfo: nativeStorageInfo,
         appInfo,
       },
     };
@@ -582,12 +681,24 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
 };
 
 const enrichPayload = async (payload: ExceptionPayload) => {
-  const userAgentHighEntropyData = await getUserAgentHighEntropyData();
-  const capacitorPayload = await enrichPayloadWithCapacitor(payload);
+  const [userAgentHighEntropyData, storageInfo] = await Promise.all([
+    getUserAgentHighEntropyData(),
+    getStorageEstimate(),
+  ]);
+  const capacitorPayload = await enrichPayloadWithCapacitor({
+    ...payload,
+    storageInfo,
+    otherDetails: {
+      ...payload.otherDetails,
+      storageInfo,
+    },
+  });
 
   if (!userAgentHighEntropyData) {
     return capacitorPayload;
   }
+
+  const highEntropyModel = firstString(userAgentHighEntropyData.model);
 
   return {
     ...capacitorPayload,
@@ -604,8 +715,8 @@ const enrichPayload = async (payload: ExceptionPayload) => {
     },
     deviceInfo: {
       ...capacitorPayload.deviceInfo,
-      model:
-        userAgentHighEntropyData.model || capacitorPayload.deviceInfo.model,
+      model: highEntropyModel || capacitorPayload.deviceInfo.model,
+      modelId: highEntropyModel || capacitorPayload.deviceInfo.modelId,
     },
   };
 };
@@ -624,6 +735,8 @@ export const buildExceptionPayload = ({
   const pathname = isBrowser() ? window.location.pathname : undefined;
   const userAgent = isBrowser() ? window.navigator.userAgent : "";
   const { browserName, osName } = getBrowserAndOs(userAgent);
+  const formattedOsName = getFormattedOsName(osName);
+  const reactDeviceModel = getReactDeviceModel(formattedOsName, userAgent);
   const runtimeInfo = getRuntimeInfo();
   const backendSource = getBackendSource(runtimeInfo);
   const configExtraData = currentConfig?.extraData ?? {};
@@ -638,6 +751,7 @@ export const buildExceptionPayload = ({
   const documentInfo = getDocumentInfo();
   const historyInfo = getHistoryInfo();
   const performanceInfo = getPerformanceInfo();
+  const memoryInfo = getMemoryInfo();
   const installedWebAppInfo = getInstalledWebAppInfo();
 
   return {
@@ -673,12 +787,17 @@ export const buildExceptionPayload = ({
       onlineStatus: isBrowser() ? window.navigator.onLine : undefined,
     },
     osInfo: {
+      name: formattedOsName,
       osName,
+      systemName: formattedOsName,
       platform: isBrowser() ? window.navigator.platform : undefined,
       ...timezoneInfo,
     },
     deviceInfo: {
       deviceId,
+      model: reactDeviceModel,
+      modelId: reactDeviceModel,
+      systemName: formattedOsName,
       deviceType: /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent)
         ? "mobile-browser"
         : "desktop-browser",
@@ -698,6 +817,7 @@ export const buildExceptionPayload = ({
     },
     screenInfo: getScreenInfo(),
     networkInfo: getNetworkInfo(),
+    memoryInfo,
     userInfo: {
       ...configUserInfo,
       ...userInfo,
@@ -711,12 +831,14 @@ export const buildExceptionPayload = ({
       documentInfo,
       historyInfo,
       performanceInfo,
+      memoryInfo,
       installedWebAppInfo,
     },
     otherDetails: {
       documentInfo,
       historyInfo,
       performanceInfo,
+      memoryInfo,
       installedWebAppInfo,
     },
     extraData: {

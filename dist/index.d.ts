@@ -42,6 +42,9 @@ export type ExceptionPayload = {
     deviceInfo: ExtraData;
     screenInfo: ExtraData;
     networkInfo: ExtraData;
+    memoryInfo?: ExtraData;
+    storageInfo?: ExtraData;
+    batteryInfo?: ExtraData;
     userInfo: ExtraData;
     metadata: ExtraData;
     otherDetails: ExtraData;

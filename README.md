@@ -60,6 +60,7 @@ The backend uses a few top-level fields for grouping, filtering, and counting. T
 - `source` is `react` for normal browser React apps and `capacitor` when running on a native Capacitor platform.
 - `deviceId` is a stable browser install id stored in `localStorage`; Capacitor apps use the native device id when available.
 - `pageUrl`, `screenName`, `appVersion`, `buildNumber`, `userInfo`, `deviceInfo`, `browserInfo`, `osInfo`, and `metadata` are sent as first-class payload fields.
+- Dashboard display keys are populated directly: `deviceInfo.model` for Device and `osInfo.name` for OS.
 - The detailed error origin, such as `window.onerror`, `window.unhandledrejection`, `resource`, or `manual`, is sent as `metadata.errorSource` and `stackSource`.
 
 ## Capacitor Details
@@ -142,7 +143,7 @@ clearExceptionContext(["role"]);
 Each payload includes:
 
 - Error title, message, stack trace, backend source, detailed error source, timestamp, project key, app version, and build number.
-- Stable device id, page URL, screen name, browser, OS, device, screen, network, document, history, performance, and referrer details.
+- Stable device id, friendly device model, page URL, screen name, browser, OS, device, screen, network, memory, storage, document, history, performance, and referrer details.
 - Static `userInfo`, static `extraData`, current context, per-call `extraData`, and metadata.
 
 ## Cleanup
