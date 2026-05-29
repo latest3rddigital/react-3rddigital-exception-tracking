@@ -58,7 +58,7 @@ If `url` already includes `/exceptions/ingest/{projectKey}`, that exact endpoint
 The backend uses a few top-level fields for grouping, filtering, and counting. This package sends those fields directly:
 
 - `source` is `react` for normal browser React apps and `capacitor` when running on a native Capacitor platform.
-- `deviceId` is a stable browser install id stored in `localStorage`; Capacitor apps use the native device id when available.
+- `deviceId` is a lightweight generated id for React web reports unless you provide one in context; Capacitor apps use `Device.getId().identifier`.
 - `pageUrl`, `screenName`, `appVersion`, `buildNumber`, `userInfo`, `deviceInfo`, `browserInfo`, `osInfo`, and `metadata` are sent as first-class payload fields.
 - Dashboard display keys are populated directly: `deviceInfo.model` for Device and `osInfo.name` for OS.
 - The detailed error origin, such as `window.onerror`, `window.unhandledrejection`, `resource`, or `manual`, is sent as `metadata.errorSource` and `stackSource`.
@@ -73,7 +73,7 @@ npm install @capacitor/app @capacitor/device
 
 Capacitor enrichment is enabled by default when the app is running on a native Capacitor platform. Disable it with:
 
-For native Capacitor reports, `browserInfo` is intentionally sent as an empty object. Device, OS, battery, memory, storage, WebView version, app version, and build details are sent through `deviceInfo`, `osInfo`, `batteryInfo`, `memoryInfo`, `storageInfo`, `metadata`, and `otherDetails`.
+For native Capacitor reports, `browserInfo` is intentionally sent as an empty object. Raw `Device.getInfo()` values are copied into `deviceInfo`, `Device.getInfo().name` is used for the dashboard Device field, and `Device.getId()`, `Device.getBatteryInfo()`, language, app version, and build details are sent through `deviceId`, `deviceInfo`, `osInfo`, `batteryInfo`, `memoryInfo`, `storageInfo`, `metadata`, and `otherDetails`.
 
 ```ts
 setupExceptionTracking({
@@ -121,24 +121,24 @@ clearExceptionContext(["role"]);
 
 ## Options
 
-| Option                       | Required | Description                                                         |
-| ---------------------------- | -------- | ------------------------------------------------------------------- |
-| `url`                        | Yes      | Base API URL or full ingest URL.                                    |
-| `apiKey`                     | Yes      | Sent as the `Api-Key` header.                                       |
-| `projectKey`                 | Yes      | Project identifier used in the ingest URL and payload.              |
-| `headers`                    | No       | Extra request headers.                                              |
-| `appVersion`                 | No       | Version included in every payload. Defaults to `1.0.0`.             |
-| `buildNumber`                | No       | Build number included in every payload.                             |
-| `userInfo`                   | No       | User data stored in the backend `userInfo` field.                   |
-| `extraData`                  | No       | Static custom context merged into every payload.                    |
-| `allowedInDevMode`           | No       | Enables reporting in `NODE_ENV=development`. Defaults to `false`.   |
-| `installGlobalHandlers`      | No       | Captures `window.error` and promise rejections. Defaults to `true`. |
-| `captureUnhandledRejections` | No       | Captures unhandled promise rejections. Defaults to `true`.          |
-| `captureResourceErrors`      | No       | Captures failed script/image/link loads. Defaults to `false`.       |
+| Option                       | Required | Description                                                            |
+| ---------------------------- | -------- | ---------------------------------------------------------------------- |
+| `url`                        | Yes      | Base API URL or full ingest URL.                                       |
+| `apiKey`                     | Yes      | Sent as the `Api-Key` header.                                          |
+| `projectKey`                 | Yes      | Project identifier used in the ingest URL and payload.                 |
+| `headers`                    | No       | Extra request headers.                                                 |
+| `appVersion`                 | No       | Version included in every payload. Defaults to `1.0.0`.                |
+| `buildNumber`                | No       | Build number included in every payload.                                |
+| `userInfo`                   | No       | User data stored in the backend `userInfo` field.                      |
+| `extraData`                  | No       | Static custom context merged into every payload.                       |
+| `allowedInDevMode`           | No       | Enables reporting in `NODE_ENV=development`. Defaults to `false`.      |
+| `installGlobalHandlers`      | No       | Captures `window.error` and promise rejections. Defaults to `true`.    |
+| `captureUnhandledRejections` | No       | Captures unhandled promise rejections. Defaults to `true`.             |
+| `captureResourceErrors`      | No       | Captures failed script/image/link loads. Defaults to `false`.          |
 | `enrichWithCapacitor`        | No       | Loads optional Capacitor details in native builds. Defaults to `true`. |
-| `source`                     | No       | `auto`, `react`, or `capacitor`. Defaults to `auto`.                |
-| `beforeSend`                 | No       | Mutate or drop payloads before upload. Return `null` to skip.       |
-| `onError`                    | No       | Called when the SDK fails to upload an exception.                   |
+| `source`                     | No       | `auto`, `react`, or `capacitor`. Defaults to `auto`.                   |
+| `beforeSend`                 | No       | Mutate or drop payloads before upload. Return `null` to skip.          |
+| `onError`                    | No       | Called when the SDK fails to upload an exception.                      |
 
 ## Payload
 

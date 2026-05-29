@@ -180,22 +180,6 @@ const getUserAgentData = () => {
     const navigatorWithUserAgentData = navigator;
     return navigatorWithUserAgentData.userAgentData || null;
 };
-const readStorageValue = (storage, key) => {
-    try {
-        return storage?.getItem(key) || undefined;
-    }
-    catch {
-        return undefined;
-    }
-};
-const writeStorageValue = (storage, key, value) => {
-    try {
-        storage?.setItem(key, value);
-    }
-    catch {
-        // Storage can be blocked in private windows or strict browser settings.
-    }
-};
 const createId = () => {
     const cryptoObject = getGlobalValue("crypto");
     if (cryptoObject?.randomUUID) {
@@ -207,7 +191,7 @@ const createId = () => {
     }
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
-const getDeviceId = (backendSource) => {
+const getDeviceId = () => {
     const contextDeviceId = firstString(currentContext.deviceId, currentContext.deviceID, currentContext.installationId);
     if (contextDeviceId) {
         return contextDeviceId;
@@ -215,16 +199,7 @@ const getDeviceId = (backendSource) => {
     if (!isBrowser()) {
         return `server:${createId()}`;
     }
-    const key = "3rddigital_exception_device_id";
-    const existing = readStorageValue(window.localStorage, key) ||
-        readStorageValue(window.sessionStorage, key);
-    if (existing) {
-        return existing;
-    }
-    const deviceId = `${backendSource}-web:${createId()}`;
-    writeStorageValue(window.localStorage, key, deviceId);
-    writeStorageValue(window.sessionStorage, key, deviceId);
-    return deviceId;
+    return `web:${createId()}`;
 };
 const firstString = (...values) => {
     const value = values.find((item) => item !== undefined && item !== null && item !== "");
@@ -362,29 +337,24 @@ const enrichPayloadWithCapacitor = async (payload) => {
         };
     }
     try {
-        const [deviceInfo, deviceIdInfo, batteryInfo, languageInfo, appInfo] = await Promise.all([
+        const [deviceInfo, deviceIdInfo, batteryInfo, languageInfo, languageTagInfo, appInfo,] = await Promise.all([
             deviceModule?.Device?.getInfo?.(),
             deviceModule?.Device?.getId?.(),
             deviceModule?.Device?.getBatteryInfo?.(),
             deviceModule?.Device?.getLanguageCode?.(),
+            deviceModule?.Device?.getLanguageTag?.(),
             appModule?.App?.getInfo?.(),
         ]);
         const deviceName = firstString(deviceInfo?.name);
         const deviceModel = firstString(deviceInfo?.model);
-        const nativeDeviceId = firstString(deviceIdInfo?.identifier, deviceModel, payload.deviceId);
-        const nativeOsName = firstString(deviceInfo?.operatingSystem, payload.osInfo.osName);
+        const nativeDeviceId = firstString(deviceIdInfo?.identifier);
+        const nativeOsName = firstString(deviceInfo?.operatingSystem);
         const nativeOsVersion = firstString(deviceInfo?.osVersion);
         const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
-        const nativeDeviceModel = firstString(deviceName, deviceModel) ||
-            (nativeOsName?.toLowerCase() === "ios" ? "iOS Device" : undefined) ||
-            (nativeOsName?.toLowerCase() === "android" ? "Android Device" : undefined) ||
-            payload.deviceInfo.model;
+        const dashboardDeviceName = firstString(deviceName, deviceModel, payload.deviceInfo.model);
         const nativeMemoryInfo = {
-            totalMemory: deviceInfo?.memUsed
-                ? undefined
-                : payload.memoryInfo?.totalMemory,
             usedMemory: deviceInfo?.memUsed,
-            maxMemory: payload.memoryInfo?.jsHeapSizeLimit,
+            memUsed: deviceInfo?.memUsed,
             jsHeapSizeLimit: payload.memoryInfo?.jsHeapSizeLimit,
             totalJSHeapSize: payload.memoryInfo?.totalJSHeapSize,
             usedJSHeapSize: payload.memoryInfo?.usedJSHeapSize,
@@ -396,11 +366,16 @@ const enrichPayloadWithCapacitor = async (payload) => {
             realDiskFree: deviceInfo?.realDiskFree,
             browserStorageEstimate: await getStorageEstimate(),
         };
+        const nativeBatteryInfo = {
+            ...batteryInfo,
+            batteryLevel: batteryInfo?.batteryLevel,
+            isCharging: batteryInfo?.isCharging,
+        };
         return {
             ...payload,
             appVersion: firstString(appInfo?.version, payload.appVersion) || "1.0.0",
             buildNumber: firstString(appInfo?.build, payload.buildNumber),
-            deviceId: nativeDeviceId || payload.deviceId,
+            deviceId: nativeDeviceId || "",
             browserInfo: {},
             osInfo: {
                 name: nativeSystemName,
@@ -408,51 +383,44 @@ const enrichPayloadWithCapacitor = async (payload) => {
                 osVersion: nativeOsVersion,
                 systemName: nativeSystemName,
                 systemVersion: nativeOsVersion,
-                platform: firstString(deviceInfo?.platform, runtimeInfo.platform),
+                platform: firstString(deviceInfo?.platform),
                 apiLevel: firstString(deviceInfo?.androidSDKVersion),
             },
             deviceInfo: {
                 ...deviceInfo,
-                brand: deviceInfo?.manufacturer,
-                deviceId: nativeDeviceId || payload.deviceId,
-                uniqueId: nativeDeviceId || payload.deviceId,
-                installationId: nativeDeviceId || payload.deviceId,
-                manufacturer: deviceInfo?.manufacturer,
-                model: nativeDeviceModel,
+                model: dashboardDeviceName,
                 modelId: deviceModel,
-                deviceName: deviceName || nativeDeviceModel,
-                name: deviceName,
+                capacitorModel: deviceModel,
+                deviceId: nativeDeviceId,
+                uniqueId: nativeDeviceId,
+                installationId: nativeDeviceId,
                 systemName: nativeSystemName,
                 systemVersion: nativeOsVersion,
-                isVirtual: deviceInfo?.isVirtual,
                 isEmulator: deviceInfo?.isVirtual,
-                deviceType: "mobile",
-                webViewVersion: deviceInfo?.webViewVersion,
-                platform: deviceInfo?.platform,
-                operatingSystem: nativeOsName,
-                osVersion: nativeOsVersion,
-                androidSDKVersion: deviceInfo?.androidSDKVersion,
                 languageCode: languageInfo?.value,
+                languageTag: languageTagInfo?.value,
             },
             memoryInfo: nativeMemoryInfo,
             storageInfo: nativeStorageInfo,
-            batteryInfo,
+            batteryInfo: nativeBatteryInfo,
             metadata: {
                 ...payload.metadata,
                 capacitorDetails: "resolved",
-                batteryInfo,
+                batteryInfo: nativeBatteryInfo,
                 memoryInfo: nativeMemoryInfo,
                 storageInfo: nativeStorageInfo,
                 appInfo,
             },
             otherDetails: {
                 ...payload.otherDetails,
-                batteryInfo,
+                batteryInfo: nativeBatteryInfo,
                 memoryInfo: nativeMemoryInfo,
                 storageInfo: nativeStorageInfo,
                 appInfo,
                 capacitorDeviceInfo: deviceInfo,
+                capacitorBatteryInfo: batteryInfo,
                 capacitorLanguageInfo: languageInfo,
+                capacitorLanguageTagInfo: languageTagInfo,
             },
         };
     }
@@ -521,7 +489,7 @@ const buildExceptionPayload = ({ source = "manual", title, message, stackTrace =
         pathname ||
         "UnknownScreen";
     const timestamp = new Date().toISOString();
-    const deviceId = getDeviceId(backendSource);
+    const deviceId = getDeviceId();
     const timezoneInfo = getTimezoneInfo();
     const documentInfo = getDocumentInfo();
     const historyInfo = getHistoryInfo();
