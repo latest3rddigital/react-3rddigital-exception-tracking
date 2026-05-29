@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ExceptionBoundary = exports.setupExceptionTracking = exports.captureException = exports.logException = exports.setCurrentScreen = exports.clearExceptionContext = exports.setExceptionContext = exports.buildExceptionPayload = void 0;
+const app_1 = require("@capacitor/app");
+const device_1 = require("@capacitor/device");
 const react_1 = __importDefault(require("react"));
 let currentConfig;
 let currentContext = {};
@@ -283,10 +285,9 @@ const getInstalledWebAppInfo = () => {
         hasInstalledRelatedAppsApi: typeof navigatorWithStandalone.getInstalledRelatedApps === "function",
     };
 };
-const optionalImport = async (moduleName) => {
+const safePluginCall = async (getter) => {
     try {
-        const importer = new Function("moduleName", "return import(moduleName)");
-        return (await importer(moduleName));
+        return await getter();
     }
     catch {
         return undefined;
@@ -322,36 +323,33 @@ const enrichPayloadWithCapacitor = async (payload) => {
     if (!isCapacitorPayload(payload)) {
         return payload;
     }
-    const [deviceModule, appModule] = await Promise.all([
-        optionalImport("@capacitor/device"),
-        optionalImport("@capacitor/app"),
-    ]);
-    if (!deviceModule?.Device && !appModule?.App) {
-        return {
-            ...payload,
-            browserInfo: {},
-            metadata: {
-                ...payload.metadata,
-                capacitorDetails: "not-installed",
-            },
-        };
-    }
     try {
         const [deviceInfo, deviceIdInfo, batteryInfo, languageInfo, languageTagInfo, appInfo,] = await Promise.all([
-            deviceModule?.Device?.getInfo?.(),
-            deviceModule?.Device?.getId?.(),
-            deviceModule?.Device?.getBatteryInfo?.(),
-            deviceModule?.Device?.getLanguageCode?.(),
-            deviceModule?.Device?.getLanguageTag?.(),
-            appModule?.App?.getInfo?.(),
+            safePluginCall(() => device_1.Device.getInfo()),
+            safePluginCall(() => device_1.Device.getId()),
+            safePluginCall(() => device_1.Device.getBatteryInfo()),
+            safePluginCall(() => device_1.Device.getLanguageCode()),
+            safePluginCall(() => device_1.Device.getLanguageTag()),
+            safePluginCall(() => app_1.App.getInfo()),
         ]);
+        if (!deviceInfo) {
+            return {
+                ...payload,
+                browserInfo: {},
+                metadata: {
+                    ...payload.metadata,
+                    capacitorDetails: "device-info-unavailable",
+                },
+            };
+        }
         const deviceName = firstString(deviceInfo?.name);
         const deviceModel = firstString(deviceInfo?.model);
+        const deviceInfoWithStorage = deviceInfo;
         const nativeDeviceId = firstString(deviceIdInfo?.identifier);
         const nativeOsName = firstString(deviceInfo?.operatingSystem);
         const nativeOsVersion = firstString(deviceInfo?.osVersion);
         const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
-        const dashboardDeviceName = firstString(deviceName, deviceModel, payload.deviceInfo.model);
+        const dashboardDeviceName = deviceInfo?.name ?? "";
         const nativeMemoryInfo = {
             usedMemory: deviceInfo?.memUsed,
             memUsed: deviceInfo?.memUsed,
@@ -360,10 +358,10 @@ const enrichPayloadWithCapacitor = async (payload) => {
             usedJSHeapSize: payload.memoryInfo?.usedJSHeapSize,
         };
         const nativeStorageInfo = {
-            totalDiskCapacity: deviceInfo?.diskTotal,
-            freeDiskStorage: deviceInfo?.diskFree,
-            realDiskTotal: deviceInfo?.realDiskTotal,
-            realDiskFree: deviceInfo?.realDiskFree,
+            totalDiskCapacity: deviceInfoWithStorage.diskTotal,
+            freeDiskStorage: deviceInfoWithStorage.diskFree,
+            realDiskTotal: deviceInfoWithStorage.realDiskTotal,
+            realDiskFree: deviceInfoWithStorage.realDiskFree,
             browserStorageEstimate: await getStorageEstimate(),
         };
         const nativeBatteryInfo = {
@@ -391,6 +389,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
                 model: dashboardDeviceName,
                 modelId: deviceModel,
                 capacitorModel: deviceModel,
+                rawDeviceInfo: deviceInfo,
                 deviceId: nativeDeviceId,
                 uniqueId: nativeDeviceId,
                 installationId: nativeDeviceId,

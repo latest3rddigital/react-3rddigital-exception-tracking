@@ -65,11 +65,7 @@ The backend uses a few top-level fields for grouping, filtering, and counting. T
 
 ## Capacitor Details
 
-The package works in normal React projects without Capacitor. For Capacitor apps, install these optional peer dependencies to enrich payloads with native app, OS, battery, language, and device details:
-
-```sh
-npm install @capacitor/app @capacitor/device
-```
+The package works in normal React projects without requiring a native Capacitor app. It includes `@capacitor/app` and `@capacitor/device` so native Capacitor builds can enrich payloads with app, OS, battery, language, and device details.
 
 Capacitor enrichment is enabled by default when the app is running on a native Capacitor platform. Disable it with:
 

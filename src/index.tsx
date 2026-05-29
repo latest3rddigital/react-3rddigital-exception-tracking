@@ -1,3 +1,5 @@
+import { App } from "@capacitor/app";
+import { Device } from "@capacitor/device";
 import React from "react";
 
 declare const process:
@@ -484,12 +486,9 @@ const getInstalledWebAppInfo = () => {
   };
 };
 
-const optionalImport = async <T,>(
-  moduleName: string,
-): Promise<T | undefined> => {
+const safePluginCall = async <T,>(getter: () => Promise<T>) => {
   try {
-    const importer = new Function("moduleName", "return import(moduleName)");
-    return (await importer(moduleName)) as T;
+    return await getter();
   } catch {
     return undefined;
   }
@@ -533,34 +532,6 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
     return payload;
   }
 
-  const [deviceModule, appModule] = await Promise.all([
-    optionalImport<{
-      Device?: {
-        getInfo?: () => Promise<ExtraData>;
-        getId?: () => Promise<{ identifier?: string }>;
-        getBatteryInfo?: () => Promise<ExtraData>;
-        getLanguageCode?: () => Promise<{ value?: string }>;
-        getLanguageTag?: () => Promise<{ value?: string }>;
-      };
-    }>("@capacitor/device"),
-    optionalImport<{
-      App?: {
-        getInfo?: () => Promise<ExtraData>;
-      };
-    }>("@capacitor/app"),
-  ]);
-
-  if (!deviceModule?.Device && !appModule?.App) {
-    return {
-      ...payload,
-      browserInfo: {},
-      metadata: {
-        ...payload.metadata,
-        capacitorDetails: "not-installed",
-      },
-    };
-  }
-
   try {
     const [
       deviceInfo,
@@ -570,16 +541,28 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
       languageTagInfo,
       appInfo,
     ] = await Promise.all([
-      deviceModule?.Device?.getInfo?.(),
-      deviceModule?.Device?.getId?.(),
-      deviceModule?.Device?.getBatteryInfo?.(),
-      deviceModule?.Device?.getLanguageCode?.(),
-      deviceModule?.Device?.getLanguageTag?.(),
-      appModule?.App?.getInfo?.(),
+      safePluginCall(() => Device.getInfo()),
+      safePluginCall(() => Device.getId()),
+      safePluginCall(() => Device.getBatteryInfo()),
+      safePluginCall(() => Device.getLanguageCode()),
+      safePluginCall(() => Device.getLanguageTag()),
+      safePluginCall(() => App.getInfo()),
     ]);
+
+    if (!deviceInfo) {
+      return {
+        ...payload,
+        browserInfo: {},
+        metadata: {
+          ...payload.metadata,
+          capacitorDetails: "device-info-unavailable",
+        },
+      };
+    }
 
     const deviceName = firstString(deviceInfo?.name);
     const deviceModel = firstString(deviceInfo?.model);
+    const deviceInfoWithStorage = deviceInfo as unknown as ExtraData;
     const nativeDeviceId = firstString(deviceIdInfo?.identifier);
     const nativeOsName = firstString(deviceInfo?.operatingSystem);
     const nativeOsVersion = firstString(deviceInfo?.osVersion);
@@ -593,10 +576,10 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
       usedJSHeapSize: payload.memoryInfo?.usedJSHeapSize,
     };
     const nativeStorageInfo = {
-      totalDiskCapacity: deviceInfo?.diskTotal,
-      freeDiskStorage: deviceInfo?.diskFree,
-      realDiskTotal: deviceInfo?.realDiskTotal,
-      realDiskFree: deviceInfo?.realDiskFree,
+      totalDiskCapacity: deviceInfoWithStorage.diskTotal,
+      freeDiskStorage: deviceInfoWithStorage.diskFree,
+      realDiskTotal: deviceInfoWithStorage.realDiskTotal,
+      realDiskFree: deviceInfoWithStorage.realDiskFree,
       browserStorageEstimate: await getStorageEstimate(),
     };
     const nativeBatteryInfo = {
@@ -625,6 +608,7 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
         model: dashboardDeviceName,
         modelId: deviceModel,
         capacitorModel: deviceModel,
+        rawDeviceInfo: deviceInfo,
         deviceId: nativeDeviceId,
         uniqueId: nativeDeviceId,
         installationId: nativeDeviceId,
