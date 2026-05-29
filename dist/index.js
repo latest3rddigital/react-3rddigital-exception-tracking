@@ -359,63 +359,90 @@ const enrichPayloadWithCapacitor = async (payload) => {
             deviceModule?.Device?.getLanguageCode?.(),
             appModule?.App?.getInfo?.(),
         ]);
-        const nativeDeviceId = firstString(deviceIdInfo?.identifier, deviceInfo?.model, payload.deviceId);
+        const deviceName = firstString(deviceInfo?.name);
+        const deviceModel = firstString(deviceInfo?.model);
+        const nativeDeviceId = firstString(deviceIdInfo?.identifier, deviceModel, payload.deviceId);
         const nativeOsName = firstString(deviceInfo?.operatingSystem, payload.osInfo.osName);
         const nativeOsVersion = firstString(deviceInfo?.osVersion);
         const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
-        const nativeDeviceModel = firstString(deviceInfo?.name, deviceInfo?.model) ||
+        const nativeDeviceModel = firstString(deviceName, deviceModel) ||
             (nativeOsName?.toLowerCase() === "ios" ? "iOS Device" : undefined) ||
             (nativeOsName?.toLowerCase() === "android" ? "Android Device" : undefined) ||
             payload.deviceInfo.model;
-        const nativeStorageInfo = await getStorageEstimate();
+        const nativeMemoryInfo = {
+            totalMemory: deviceInfo?.memUsed
+                ? undefined
+                : payload.memoryInfo?.totalMemory,
+            usedMemory: deviceInfo?.memUsed,
+            maxMemory: payload.memoryInfo?.jsHeapSizeLimit,
+            jsHeapSizeLimit: payload.memoryInfo?.jsHeapSizeLimit,
+            totalJSHeapSize: payload.memoryInfo?.totalJSHeapSize,
+            usedJSHeapSize: payload.memoryInfo?.usedJSHeapSize,
+        };
+        const nativeStorageInfo = {
+            totalDiskCapacity: deviceInfo?.diskTotal,
+            freeDiskStorage: deviceInfo?.diskFree,
+            realDiskTotal: deviceInfo?.realDiskTotal,
+            realDiskFree: deviceInfo?.realDiskFree,
+            browserStorageEstimate: await getStorageEstimate(),
+        };
         return {
             ...payload,
             appVersion: firstString(appInfo?.version, payload.appVersion) || "1.0.0",
             buildNumber: firstString(appInfo?.build, payload.buildNumber),
             deviceId: nativeDeviceId || payload.deviceId,
-            browserInfo: {
-                ...payload.browserInfo,
-                name: `Capacitor WebView (${runtimeInfo.platform})`,
-                version: firstString(deviceInfo?.webViewVersion, payload.browserInfo.version) ||
-                    "Unknown",
-                language: firstString(languageInfo?.value, payload.browserInfo.language) ||
-                    undefined,
-            },
+            browserInfo: {},
             osInfo: {
-                ...payload.osInfo,
                 name: nativeSystemName,
-                osName: nativeOsName || payload.osInfo.osName,
+                osName: nativeOsName,
                 osVersion: nativeOsVersion,
+                systemName: nativeSystemName,
+                systemVersion: nativeOsVersion,
                 platform: firstString(deviceInfo?.platform, runtimeInfo.platform),
                 apiLevel: firstString(deviceInfo?.androidSDKVersion),
             },
             deviceInfo: {
-                ...payload.deviceInfo,
                 ...deviceInfo,
+                brand: deviceInfo?.manufacturer,
                 deviceId: nativeDeviceId || payload.deviceId,
+                uniqueId: nativeDeviceId || payload.deviceId,
+                installationId: nativeDeviceId || payload.deviceId,
                 manufacturer: deviceInfo?.manufacturer,
                 model: nativeDeviceModel,
-                modelId: deviceInfo?.model,
+                modelId: deviceModel,
+                deviceName: deviceName || nativeDeviceModel,
+                name: deviceName,
                 systemName: nativeSystemName,
                 systemVersion: nativeOsVersion,
                 isVirtual: deviceInfo?.isVirtual,
+                isEmulator: deviceInfo?.isVirtual,
                 deviceType: "mobile",
                 webViewVersion: deviceInfo?.webViewVersion,
+                platform: deviceInfo?.platform,
+                operatingSystem: nativeOsName,
+                osVersion: nativeOsVersion,
+                androidSDKVersion: deviceInfo?.androidSDKVersion,
+                languageCode: languageInfo?.value,
             },
+            memoryInfo: nativeMemoryInfo,
             storageInfo: nativeStorageInfo,
             batteryInfo,
             metadata: {
                 ...payload.metadata,
                 capacitorDetails: "resolved",
                 batteryInfo,
+                memoryInfo: nativeMemoryInfo,
                 storageInfo: nativeStorageInfo,
                 appInfo,
             },
             otherDetails: {
                 ...payload.otherDetails,
                 batteryInfo,
+                memoryInfo: nativeMemoryInfo,
                 storageInfo: nativeStorageInfo,
                 appInfo,
+                capacitorDeviceInfo: deviceInfo,
+                capacitorLanguageInfo: languageInfo,
             },
         };
     }

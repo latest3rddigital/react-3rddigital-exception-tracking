@@ -73,6 +73,8 @@ npm install @capacitor/app @capacitor/device
 
 Capacitor enrichment is enabled by default when the app is running on a native Capacitor platform. Disable it with:
 
+For native Capacitor reports, `browserInfo` is intentionally sent as an empty object. Device, OS, battery, memory, storage, WebView version, app version, and build details are sent through `deviceInfo`, `osInfo`, `batteryInfo`, `memoryInfo`, `storageInfo`, `metadata`, and `otherDetails`.
+
 ```ts
 setupExceptionTracking({
   // ...
