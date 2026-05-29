@@ -15,7 +15,9 @@ export type ExceptionContext = ExtraData & {
   userId?: string | number;
 };
 
-export type ExceptionSource =
+export type ExceptionSource = "react" | "capacitor";
+
+export type ExceptionDetailSource =
   | "react"
   | "window.onerror"
   | "window.unhandledrejection"
@@ -23,12 +25,14 @@ export type ExceptionSource =
   | "manual";
 
 export type ExceptionPayloadInput = {
-  source: ExceptionSource;
+  source?: ExceptionDetailSource;
   title: string;
   message: string;
   stackTrace?: string;
+  exceptionData?: unknown;
   metadata?: ExtraData;
   extraData?: ExtraData;
+  userInfo?: ExtraData;
 };
 
 export type ExceptionPayload = {
@@ -36,21 +40,30 @@ export type ExceptionPayload = {
   title: string;
   message: string;
   stackTrace: string;
-  stackSource: ExceptionSource;
+  stackSource: ExceptionDetailSource;
   platform: "web";
   timestamp: string;
+  reportedAt: string;
   projectKey: string;
+  environment?: string;
   appVersion: string;
+  buildNumber?: string;
+  deviceId: string;
+  pageUrl?: string;
   url?: string;
+  path?: string;
   pathname?: string;
   screenName?: string;
   userAgent?: string;
+  exceptionData?: unknown;
   browserInfo: ExtraData;
   osInfo: ExtraData;
   deviceInfo: ExtraData;
   screenInfo: ExtraData;
   networkInfo: ExtraData;
+  userInfo: ExtraData;
   metadata: ExtraData;
+  otherDetails: ExtraData;
   extraData: ExtraData;
 };
 
@@ -60,12 +73,17 @@ export type SetupExceptionTrackingOptions = {
   projectKey: string;
   headers?: Record<string, string>;
   extraData?: ExceptionContext;
+  userInfo?: ExtraData;
   appVersion?: string;
+  buildNumber?: string;
+  environment?: "development" | "production" | string;
   enabled?: boolean;
   allowedInDevMode?: boolean;
   installGlobalHandlers?: boolean;
   captureUnhandledRejections?: boolean;
   captureResourceErrors?: boolean;
+  enrichWithCapacitor?: boolean;
+  source?: ExceptionSource | "auto";
   beforeSend?: (
     payload: ExceptionPayload,
   ) => ExceptionPayload | null | Promise<ExceptionPayload | null>;
@@ -88,6 +106,7 @@ type InternalConfig = Required<
     | "installGlobalHandlers"
     | "captureUnhandledRejections"
     | "captureResourceErrors"
+    | "enrichWithCapacitor"
   >
 > &
   Omit<
@@ -96,6 +115,7 @@ type InternalConfig = Required<
     | "installGlobalHandlers"
     | "captureUnhandledRejections"
     | "captureResourceErrors"
+    | "enrichWithCapacitor"
   >;
 
 let currentConfig: InternalConfig | undefined;
@@ -104,6 +124,12 @@ let cleanupHandlers: CleanupExceptionTracking | undefined;
 
 const isBrowser = () =>
   typeof window !== "undefined" && typeof document !== "undefined";
+
+const getGlobalValue = (key: string): unknown => {
+  const globalObject = globalThis as typeof globalThis &
+    Record<string, unknown>;
+  return globalObject[key];
+};
 
 const getIngestUrl = (url: string, projectKey: string) => {
   const baseUrl = url.replace(/\/+$/, "");
@@ -160,6 +186,33 @@ const getBrowserAndOs = (userAgent = "") => {
     osName = "iOS";
 
   return { browserName, osName };
+};
+
+const getRuntimeInfo = () => {
+  const capacitor = getGlobalValue("Capacitor") as
+    | {
+        isNativePlatform?: () => boolean;
+        getPlatform?: () => string;
+      }
+    | undefined;
+  const isCapacitorNative = Boolean(capacitor?.isNativePlatform?.());
+  const capacitorPlatform = capacitor?.getPlatform?.();
+
+  return {
+    runtime: isCapacitorNative ? "capacitor" : "browser",
+    platform: capacitorPlatform || "web",
+    isCapacitorNative,
+  };
+};
+
+const getBackendSource = (
+  runtimeInfo: ReturnType<typeof getRuntimeInfo>,
+): ExceptionSource => {
+  if (currentConfig?.source && currentConfig.source !== "auto") {
+    return currentConfig.source;
+  }
+
+  return runtimeInfo.isCapacitorNative ? "capacitor" : "react";
 };
 
 const getBrowserVersion = (userAgent: string, browserName: string) => {
@@ -226,38 +279,388 @@ const getUserAgentData = (): ExtraData | null => {
   return navigatorWithUserAgentData.userAgentData || null;
 };
 
+const readStorageValue = (storage: Storage | undefined, key: string) => {
+  try {
+    return storage?.getItem(key) || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const writeStorageValue = (
+  storage: Storage | undefined,
+  key: string,
+  value: string,
+) => {
+  try {
+    storage?.setItem(key, value);
+  } catch {
+    // Storage can be blocked in private windows or strict browser settings.
+  }
+};
+
+const createId = () => {
+  const cryptoObject = getGlobalValue("crypto") as
+    | {
+        randomUUID?: () => string;
+        getRandomValues?: (array: Uint32Array) => Uint32Array;
+      }
+    | undefined;
+
+  if (cryptoObject?.randomUUID) {
+    return cryptoObject.randomUUID();
+  }
+
+  if (cryptoObject?.getRandomValues) {
+    const values = cryptoObject.getRandomValues(new Uint32Array(4));
+    return Array.from(values, (value) => value.toString(16)).join("-");
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+};
+
+const getDeviceId = (backendSource: ExceptionSource) => {
+  const contextDeviceId = firstString(
+    currentContext.deviceId,
+    currentContext.deviceID,
+    currentContext.installationId,
+  );
+
+  if (contextDeviceId) {
+    return contextDeviceId;
+  }
+
+  if (!isBrowser()) {
+    return `server:${createId()}`;
+  }
+
+  const key = "3rddigital_exception_device_id";
+  const existing =
+    readStorageValue(window.localStorage, key) ||
+    readStorageValue(window.sessionStorage, key);
+
+  if (existing) {
+    return existing;
+  }
+
+  const deviceId = `${backendSource}-web:${createId()}`;
+  writeStorageValue(window.localStorage, key, deviceId);
+  writeStorageValue(window.sessionStorage, key, deviceId);
+  return deviceId;
+};
+
+const firstString = (...values: unknown[]) => {
+  const value = values.find(
+    (item) => item !== undefined && item !== null && item !== "",
+  );
+
+  return value === undefined ? undefined : String(value);
+};
+
+const getTimezoneInfo = () => {
+  if (!isBrowser()) return {};
+
+  const date = new Date();
+
+  return {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezoneOffsetMinutes: date.getTimezoneOffset(),
+    locale: Intl.DateTimeFormat().resolvedOptions().locale,
+  };
+};
+
+const getDocumentInfo = () => {
+  if (!isBrowser()) return {};
+
+  return {
+    title: document.title,
+    referrer: document.referrer || "Direct",
+    visibilityState: document.visibilityState,
+    hidden: document.hidden,
+    characterSet: document.characterSet,
+    contentType: document.contentType,
+    readyState: document.readyState,
+  };
+};
+
+const getPerformanceInfo = () => {
+  if (!isBrowser()) return {};
+
+  const navigation = performance.getEntriesByType?.("navigation")?.[0] as
+    | PerformanceNavigationTiming
+    | undefined;
+  const memory = (
+    performance as Performance & {
+      memory?: ExtraData;
+    }
+  ).memory;
+
+  return {
+    navigationType: navigation?.type,
+    domContentLoadedMs: navigation
+      ? Math.round(navigation.domContentLoadedEventEnd)
+      : undefined,
+    loadEventEndMs: navigation
+      ? Math.round(navigation.loadEventEnd)
+      : undefined,
+    transferSize: navigation?.transferSize,
+    encodedBodySize: navigation?.encodedBodySize,
+    decodedBodySize: navigation?.decodedBodySize,
+    memory,
+  };
+};
+
+const getHistoryInfo = () => {
+  if (!isBrowser()) return {};
+
+  return {
+    historyLength: window.history.length,
+    hash: window.location.hash,
+    search: window.location.search,
+    origin: window.location.origin,
+    host: window.location.host,
+    protocol: window.location.protocol,
+  };
+};
+
+const getInstalledWebAppInfo = () => {
+  if (!isBrowser()) return {};
+
+  const navigatorWithStandalone = navigator as Navigator & {
+    standalone?: boolean;
+    getInstalledRelatedApps?: () => Promise<unknown[]>;
+  };
+
+  return {
+    standalone:
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      navigatorWithStandalone.standalone ||
+      false,
+    hasInstalledRelatedAppsApi:
+      typeof navigatorWithStandalone.getInstalledRelatedApps === "function",
+  };
+};
+
+const optionalImport = async <T,>(
+  moduleName: string,
+): Promise<T | undefined> => {
+  try {
+    const importer = new Function("moduleName", "return import(moduleName)");
+    return (await importer(moduleName)) as T;
+  } catch {
+    return undefined;
+  }
+};
+
+const getUserAgentHighEntropyData = async () => {
+  if (!isBrowser()) return undefined;
+
+  const navigatorWithUserAgentData = navigator as Navigator & {
+    userAgentData?: {
+      getHighEntropyValues?: (hints: string[]) => Promise<ExtraData>;
+    };
+  };
+
+  if (!navigatorWithUserAgentData.userAgentData?.getHighEntropyValues) {
+    return undefined;
+  }
+
+  try {
+    return await navigatorWithUserAgentData.userAgentData.getHighEntropyValues([
+      "architecture",
+      "bitness",
+      "model",
+      "platformVersion",
+      "uaFullVersion",
+      "fullVersionList",
+      "wow64",
+    ]);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
+  if (!currentConfig?.enrichWithCapacitor) {
+    return payload;
+  }
+
+  const runtimeInfo = getRuntimeInfo();
+  if (!runtimeInfo.isCapacitorNative) {
+    return payload;
+  }
+
+  const [deviceModule, appModule] = await Promise.all([
+    optionalImport<{
+      Device?: {
+        getInfo?: () => Promise<ExtraData>;
+        getId?: () => Promise<{ identifier?: string }>;
+        getBatteryInfo?: () => Promise<ExtraData>;
+        getLanguageCode?: () => Promise<{ value?: string }>;
+      };
+    }>("@capacitor/device"),
+    optionalImport<{
+      App?: {
+        getInfo?: () => Promise<ExtraData>;
+      };
+    }>("@capacitor/app"),
+  ]);
+
+  if (!deviceModule?.Device && !appModule?.App) {
+    return {
+      ...payload,
+      metadata: {
+        ...payload.metadata,
+        capacitorDetails: "not-installed",
+      },
+    };
+  }
+
+  try {
+    const [deviceInfo, deviceIdInfo, batteryInfo, languageInfo, appInfo] =
+      await Promise.all([
+        deviceModule?.Device?.getInfo?.(),
+        deviceModule?.Device?.getId?.(),
+        deviceModule?.Device?.getBatteryInfo?.(),
+        deviceModule?.Device?.getLanguageCode?.(),
+        appModule?.App?.getInfo?.(),
+      ]);
+
+    const nativeDeviceId = firstString(
+      deviceIdInfo?.identifier,
+      deviceInfo?.model,
+      payload.deviceId,
+    );
+
+    return {
+      ...payload,
+      appVersion: firstString(appInfo?.version, payload.appVersion) || "1.0.0",
+      buildNumber: firstString(appInfo?.build, payload.buildNumber),
+      deviceId: nativeDeviceId || payload.deviceId,
+      browserInfo: {
+        ...payload.browserInfo,
+        name: `Capacitor WebView (${runtimeInfo.platform})`,
+        version: deviceInfo?.webViewVersion || payload.browserInfo.version,
+        language: languageInfo?.value || payload.browserInfo.language,
+      },
+      osInfo: {
+        ...payload.osInfo,
+        osName: deviceInfo?.operatingSystem || payload.osInfo.osName,
+        osVersion: deviceInfo?.osVersion,
+        platform: deviceInfo?.platform || runtimeInfo.platform,
+        apiLevel: deviceInfo?.androidSDKVersion,
+      },
+      deviceInfo: {
+        ...payload.deviceInfo,
+        ...deviceInfo,
+        deviceId: nativeDeviceId || payload.deviceId,
+        manufacturer: deviceInfo?.manufacturer,
+        model: deviceInfo?.model || deviceInfo?.name,
+        systemName: deviceInfo?.platform,
+        systemVersion: deviceInfo?.osVersion,
+        isVirtual: deviceInfo?.isVirtual,
+        deviceType: "mobile",
+      },
+      metadata: {
+        ...payload.metadata,
+        capacitorDetails: "resolved",
+        batteryInfo,
+        appInfo,
+      },
+    };
+  } catch (error) {
+    return {
+      ...payload,
+      metadata: {
+        ...payload.metadata,
+        capacitorDetails: "failed",
+        capacitorDetailsError:
+          error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+};
+
+const enrichPayload = async (payload: ExceptionPayload) => {
+  const userAgentHighEntropyData = await getUserAgentHighEntropyData();
+  const capacitorPayload = await enrichPayloadWithCapacitor(payload);
+
+  if (!userAgentHighEntropyData) {
+    return capacitorPayload;
+  }
+
+  return {
+    ...capacitorPayload,
+    browserInfo: {
+      ...capacitorPayload.browserInfo,
+      userAgentHighEntropyData,
+    },
+    osInfo: {
+      ...capacitorPayload.osInfo,
+      platformVersion: userAgentHighEntropyData.platformVersion,
+      architecture: userAgentHighEntropyData.architecture,
+      bitness: userAgentHighEntropyData.bitness,
+      wow64: userAgentHighEntropyData.wow64,
+    },
+    deviceInfo: {
+      ...capacitorPayload.deviceInfo,
+      model:
+        userAgentHighEntropyData.model || capacitorPayload.deviceInfo.model,
+    },
+  };
+};
+
 export const buildExceptionPayload = ({
-  source,
+  source = "manual",
   title,
   message,
   stackTrace = "",
+  exceptionData,
   metadata = {},
   extraData = {},
+  userInfo = {},
 }: ExceptionPayloadInput): ExceptionPayload => {
   const url = isBrowser() ? window.location.href : undefined;
   const pathname = isBrowser() ? window.location.pathname : undefined;
   const userAgent = isBrowser() ? window.navigator.userAgent : "";
   const { browserName, osName } = getBrowserAndOs(userAgent);
+  const runtimeInfo = getRuntimeInfo();
+  const backendSource = getBackendSource(runtimeInfo);
   const configExtraData = currentConfig?.extraData ?? {};
+  const configUserInfo = currentConfig?.userInfo ?? {};
   const screenName =
     (currentContext.screenName as string | undefined) ||
     pathname ||
     "UnknownScreen";
+  const timestamp = new Date().toISOString();
+  const deviceId = getDeviceId(backendSource);
+  const timezoneInfo = getTimezoneInfo();
+  const documentInfo = getDocumentInfo();
+  const historyInfo = getHistoryInfo();
+  const performanceInfo = getPerformanceInfo();
+  const installedWebAppInfo = getInstalledWebAppInfo();
 
   return {
-    source,
+    source: backendSource,
     title,
     message,
     stackTrace,
     stackSource: source,
     platform: "web",
-    timestamp: new Date().toISOString(),
+    timestamp,
+    reportedAt: timestamp,
     projectKey: currentConfig?.projectKey ?? "",
+    environment: currentConfig?.environment,
     appVersion: currentConfig?.appVersion ?? "1.0.0",
+    buildNumber: currentConfig?.buildNumber,
+    deviceId,
+    pageUrl: url,
     url,
+    path: pathname,
     pathname,
     screenName,
     userAgent,
+    exceptionData,
     browserInfo: {
       name: browserName,
       version: getBrowserVersion(userAgent, browserName),
@@ -267,13 +670,15 @@ export const buildExceptionPayload = ({
       doNotTrack: isBrowser() ? window.navigator.doNotTrack : undefined,
       vendor: isBrowser() ? window.navigator.vendor : undefined,
       userAgentData: getUserAgentData(),
+      onlineStatus: isBrowser() ? window.navigator.onLine : undefined,
     },
     osInfo: {
       osName,
       platform: isBrowser() ? window.navigator.platform : undefined,
+      ...timezoneInfo,
     },
     deviceInfo: {
-      deviceId: "browser",
+      deviceId,
       deviceType: /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent)
         ? "mobile-browser"
         : "desktop-browser",
@@ -287,13 +692,32 @@ export const buildExceptionPayload = ({
         ? (window.navigator as Navigator & { deviceMemory?: number })
             .deviceMemory || "Unknown"
         : undefined,
+      runtime: runtimeInfo.runtime,
+      runtimePlatform: runtimeInfo.platform,
+      isCapacitorNative: runtimeInfo.isCapacitorNative,
     },
     screenInfo: getScreenInfo(),
     networkInfo: getNetworkInfo(),
+    userInfo: {
+      ...configUserInfo,
+      ...userInfo,
+    },
     metadata: {
       ...metadata,
       framework: "react",
-      referrer: isBrowser() ? document.referrer || "Direct" : undefined,
+      errorSource: source,
+      backendSource,
+      runtimeSource: runtimeInfo.runtime,
+      documentInfo,
+      historyInfo,
+      performanceInfo,
+      installedWebAppInfo,
+    },
+    otherDetails: {
+      documentInfo,
+      historyInfo,
+      performanceInfo,
+      installedWebAppInfo,
     },
     extraData: {
       ...configExtraData,
@@ -332,9 +756,10 @@ export const logException = async (
     return false;
   }
 
+  const enrichedPayload = await enrichPayload(payload);
   const preparedPayload = currentConfig.beforeSend
-    ? await currentConfig.beforeSend(payload)
-    : payload;
+    ? await currentConfig.beforeSend(enrichedPayload)
+    : enrichedPayload;
 
   if (!preparedPayload) {
     return false;
@@ -485,6 +910,7 @@ export const setupExceptionTracking = (
     installGlobalHandlers: true,
     captureUnhandledRejections: true,
     captureResourceErrors: false,
+    enrichWithCapacitor: true,
     ...options,
   };
 

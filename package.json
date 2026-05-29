@@ -42,7 +42,17 @@
   },
   "homepage": "https://github.com/latest3rddigital/react-3rddigital-exception-tracking#readme",
   "peerDependencies": {
+    "@capacitor/app": ">=5.0.0",
+    "@capacitor/device": ">=5.0.0",
     "react": ">=16.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@capacitor/app": {
+      "optional": true
+    },
+    "@capacitor/device": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
