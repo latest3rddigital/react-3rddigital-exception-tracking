@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 declare const process:
   | {
@@ -16,11 +16,11 @@ export type ExceptionContext = ExtraData & {
 };
 
 export type ExceptionSource =
-  | 'react'
-  | 'window.onerror'
-  | 'window.unhandledrejection'
-  | 'resource'
-  | 'manual';
+  | "react"
+  | "window.onerror"
+  | "window.unhandledrejection"
+  | "resource"
+  | "manual";
 
 export type ExceptionPayloadInput = {
   source: ExceptionSource;
@@ -37,7 +37,7 @@ export type ExceptionPayload = {
   message: string;
   stackTrace: string;
   stackSource: ExceptionSource;
-  platform: 'web';
+  platform: "web";
   timestamp: string;
   projectKey: string;
   appVersion: string;
@@ -67,7 +67,7 @@ export type SetupExceptionTrackingOptions = {
   captureUnhandledRejections?: boolean;
   captureResourceErrors?: boolean;
   beforeSend?: (
-    payload: ExceptionPayload
+    payload: ExceptionPayload,
   ) => ExceptionPayload | null | Promise<ExceptionPayload | null>;
   onError?: (error: unknown, payload?: ExceptionPayload) => void;
 };
@@ -84,28 +84,29 @@ export type ExceptionBoundaryProps = {
 type InternalConfig = Required<
   Pick<
     SetupExceptionTrackingOptions,
-    | 'enabled'
-    | 'installGlobalHandlers'
-    | 'captureUnhandledRejections'
-    | 'captureResourceErrors'
+    | "enabled"
+    | "installGlobalHandlers"
+    | "captureUnhandledRejections"
+    | "captureResourceErrors"
   >
 > &
   Omit<
     SetupExceptionTrackingOptions,
-    | 'enabled'
-    | 'installGlobalHandlers'
-    | 'captureUnhandledRejections'
-    | 'captureResourceErrors'
+    | "enabled"
+    | "installGlobalHandlers"
+    | "captureUnhandledRejections"
+    | "captureResourceErrors"
   >;
 
 let currentConfig: InternalConfig | undefined;
 let currentContext: ExceptionContext = {};
 let cleanupHandlers: CleanupExceptionTracking | undefined;
 
-const isBrowser = () => typeof window !== 'undefined' && typeof document !== 'undefined';
+const isBrowser = () =>
+  typeof window !== "undefined" && typeof document !== "undefined";
 
 const getIngestUrl = (url: string, projectKey: string) => {
-  const baseUrl = url.replace(/\/+$/, '');
+  const baseUrl = url.replace(/\/+$/, "");
   const encodedProjectKey = encodeURIComponent(projectKey);
 
   if (baseUrl.endsWith(`/exceptions/ingest/${encodedProjectKey}`)) {
@@ -116,42 +117,47 @@ const getIngestUrl = (url: string, projectKey: string) => {
 };
 
 const isDevMode = () => {
-  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
-    return process.env.NODE_ENV === 'development';
+  if (typeof process !== "undefined" && process.env?.NODE_ENV) {
+    return process.env.NODE_ENV === "development";
   }
 
   return false;
 };
 
 const assertRequiredConfig = (options: SetupExceptionTrackingOptions) => {
-  const missingFields = (['url', 'apiKey', 'projectKey'] as const).filter(
-    (field) => !options[field]?.trim()
+  const missingFields = (["url", "apiKey", "projectKey"] as const).filter(
+    (field) => !options[field]?.trim(),
   );
 
   if (missingFields.length > 0) {
     throw new Error(
-      `Exception tracking setup is missing required field(s): ${missingFields.join(', ')}`
+      `Exception tracking setup is missing required field(s): ${missingFields.join(", ")}`,
     );
   }
 };
 
-const getBrowserAndOs = (userAgent = '') => {
-  let browserName = 'Unknown Browser';
-  let osName = 'Unknown OS';
+const getBrowserAndOs = (userAgent = "") => {
+  let browserName = "Unknown Browser";
+  let osName = "Unknown OS";
 
-  if (userAgent.includes('Firefox')) browserName = 'Firefox';
-  else if (userAgent.includes('SamsungBrowser')) browserName = 'Samsung Browser';
-  else if (userAgent.includes('Opera') || userAgent.includes('OPR')) browserName = 'Opera';
-  else if (userAgent.includes('Trident')) browserName = 'Internet Explorer';
-  else if (userAgent.includes('Edge') || userAgent.includes('Edg')) browserName = 'Edge';
-  else if (userAgent.includes('Chrome')) browserName = 'Chrome';
-  else if (userAgent.includes('Safari')) browserName = 'Safari';
+  if (userAgent.includes("Firefox")) browserName = "Firefox";
+  else if (userAgent.includes("SamsungBrowser"))
+    browserName = "Samsung Browser";
+  else if (userAgent.includes("Opera") || userAgent.includes("OPR"))
+    browserName = "Opera";
+  else if (userAgent.includes("Trident")) browserName = "Internet Explorer";
+  else if (userAgent.includes("Edge") || userAgent.includes("Edg"))
+    browserName = "Edge";
+  else if (userAgent.includes("Chrome")) browserName = "Chrome";
+  else if (userAgent.includes("Safari")) browserName = "Safari";
 
-  if (userAgent.includes('Win')) osName = 'Windows';
-  else if (userAgent.includes('Mac')) osName = 'macOS';
-  else if (userAgent.includes('X11') || userAgent.includes('Linux')) osName = 'Linux';
-  else if (userAgent.includes('Android')) osName = 'Android';
-  else if (userAgent.includes('iPhone') || userAgent.includes('iPad')) osName = 'iOS';
+  if (userAgent.includes("Win")) osName = "Windows";
+  else if (userAgent.includes("Mac")) osName = "macOS";
+  else if (userAgent.includes("X11") || userAgent.includes("Linux"))
+    osName = "Linux";
+  else if (userAgent.includes("Android")) osName = "Android";
+  else if (userAgent.includes("iPhone") || userAgent.includes("iPad"))
+    osName = "iOS";
 
   return { browserName, osName };
 };
@@ -160,14 +166,14 @@ const getBrowserVersion = (userAgent: string, browserName: string) => {
   const versionMatchers: Record<string, RegExp> = {
     Chrome: /Chrome\/([\d.]+)/,
     Firefox: /Firefox\/([\d.]+)/,
-    'Samsung Browser': /SamsungBrowser\/([\d.]+)/,
+    "Samsung Browser": /SamsungBrowser\/([\d.]+)/,
     Opera: /(?:Opera|OPR)\/([\d.]+)/,
-    'Internet Explorer': /(?:MSIE |rv:)([\d.]+)/,
+    "Internet Explorer": /(?:MSIE |rv:)([\d.]+)/,
     Edge: /Edg(?:e)?\/([\d.]+)/,
     Safari: /Version\/([\d.]+).*Safari/,
   };
 
-  return userAgent.match(versionMatchers[browserName])?.[1] || 'Unknown';
+  return userAgent.match(versionMatchers[browserName])?.[1] || "Unknown";
 };
 
 const getScreenInfo = (): ExtraData => {
@@ -184,7 +190,7 @@ const getScreenInfo = (): ExtraData => {
     colorDepth: window.screen?.colorDepth,
     orientation:
       window.screen?.orientation?.type ||
-      (window.innerHeight > window.innerWidth ? 'portrait' : 'landscape'),
+      (window.innerHeight > window.innerWidth ? "portrait" : "landscape"),
   };
 };
 
@@ -203,9 +209,9 @@ const getNetworkInfo = (): ExtraData => {
 
   return {
     onlineStatus: navigator.onLine,
-    effectiveType: connection?.effectiveType || 'Unknown',
-    downlink: connection?.downlink || 'Unknown',
-    rtt: connection?.rtt || 'Unknown',
+    effectiveType: connection?.effectiveType || "Unknown",
+    downlink: connection?.downlink || "Unknown",
+    rtt: connection?.rtt || "Unknown",
     saveData: connection?.saveData || false,
   };
 };
@@ -224,17 +230,19 @@ export const buildExceptionPayload = ({
   source,
   title,
   message,
-  stackTrace = '',
+  stackTrace = "",
   metadata = {},
   extraData = {},
 }: ExceptionPayloadInput): ExceptionPayload => {
   const url = isBrowser() ? window.location.href : undefined;
   const pathname = isBrowser() ? window.location.pathname : undefined;
-  const userAgent = isBrowser() ? window.navigator.userAgent : '';
+  const userAgent = isBrowser() ? window.navigator.userAgent : "";
   const { browserName, osName } = getBrowserAndOs(userAgent);
   const configExtraData = currentConfig?.extraData ?? {};
   const screenName =
-    (currentContext.screenName as string | undefined) || pathname || 'UnknownScreen';
+    (currentContext.screenName as string | undefined) ||
+    pathname ||
+    "UnknownScreen";
 
   return {
     source,
@@ -242,10 +250,10 @@ export const buildExceptionPayload = ({
     message,
     stackTrace,
     stackSource: source,
-    platform: 'web',
+    platform: "web",
     timestamp: new Date().toISOString(),
-    projectKey: currentConfig?.projectKey ?? '',
-    appVersion: currentConfig?.appVersion ?? '1.0.0',
+    projectKey: currentConfig?.projectKey ?? "",
+    appVersion: currentConfig?.appVersion ?? "1.0.0",
     url,
     pathname,
     screenName,
@@ -265,24 +273,27 @@ export const buildExceptionPayload = ({
       platform: isBrowser() ? window.navigator.platform : undefined,
     },
     deviceInfo: {
-      deviceId: 'browser',
+      deviceId: "browser",
       deviceType: /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent)
-        ? 'mobile-browser'
-        : 'desktop-browser',
-      touchPoints: isBrowser() ? window.navigator.maxTouchPoints || 0 : undefined,
+        ? "mobile-browser"
+        : "desktop-browser",
+      touchPoints: isBrowser()
+        ? window.navigator.maxTouchPoints || 0
+        : undefined,
       hardwareConcurrency: isBrowser()
-        ? window.navigator.hardwareConcurrency || 'Unknown'
+        ? window.navigator.hardwareConcurrency || "Unknown"
         : undefined,
       deviceMemory: isBrowser()
-        ? (window.navigator as Navigator & { deviceMemory?: number }).deviceMemory || 'Unknown'
+        ? (window.navigator as Navigator & { deviceMemory?: number })
+            .deviceMemory || "Unknown"
         : undefined,
     },
     screenInfo: getScreenInfo(),
     networkInfo: getNetworkInfo(),
     metadata: {
       ...metadata,
-      framework: 'react',
-      referrer: isBrowser() ? document.referrer || 'Direct' : undefined,
+      framework: "react",
+      referrer: isBrowser() ? document.referrer || "Direct" : undefined,
     },
     extraData: {
       ...configExtraData,
@@ -314,7 +325,9 @@ export const setCurrentScreen = (screenName: string) => {
   setExceptionContext({ screenName });
 };
 
-export const logException = async (payload: ExceptionPayload): Promise<boolean> => {
+export const logException = async (
+  payload: ExceptionPayload,
+): Promise<boolean> => {
   if (!currentConfig?.enabled) {
     return false;
   }
@@ -328,16 +341,19 @@ export const logException = async (payload: ExceptionPayload): Promise<boolean> 
   }
 
   try {
-    const response = await fetch(getIngestUrl(currentConfig.url, currentConfig.projectKey), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...currentConfig.headers,
-        'Api-Key': currentConfig.apiKey,
+    const response = await fetch(
+      getIngestUrl(currentConfig.url, currentConfig.projectKey),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...currentConfig.headers,
+          "Api-Key": currentConfig.apiKey,
+        },
+        body: JSON.stringify(preparedPayload),
+        keepalive: true,
       },
-      body: JSON.stringify(preparedPayload),
-      keepalive: true,
-    });
+    );
 
     return response.ok;
   } catch (error) {
@@ -346,23 +362,27 @@ export const logException = async (payload: ExceptionPayload): Promise<boolean> 
   }
 };
 
-export const captureException = async (error: unknown, extraData?: ExtraData) => {
-  const normalizedError = error instanceof Error ? error : new Error(String(error));
+export const captureException = async (
+  error: unknown,
+  extraData?: ExtraData,
+) => {
+  const normalizedError =
+    error instanceof Error ? error : new Error(String(error));
 
   return logException(
     buildExceptionPayload({
-      source: 'manual',
-      title: normalizedError.name || 'Manual Exception',
-      message: normalizedError.message || 'No message provided',
-      stackTrace: normalizedError.stack ?? '',
+      source: "manual",
+      title: normalizedError.name || "Manual Exception",
+      message: normalizedError.message || "No message provided",
+      stackTrace: normalizedError.stack ?? "",
       extraData,
-    })
+    }),
   );
 };
 
 const getRejectionMessage = (reason: unknown) => {
   if (reason instanceof Error) return reason.message;
-  if (typeof reason === 'string') return reason;
+  if (typeof reason === "string") return reason;
 
   try {
     return JSON.stringify(reason);
@@ -378,18 +398,18 @@ const installGlobalHandlers = () => {
     if (event instanceof ErrorEvent) {
       logException(
         buildExceptionPayload({
-          source: 'window.onerror',
-          title: event.error?.name || 'JavaScript Error',
-          message: event.message || 'No message provided',
+          source: "window.onerror",
+          title: event.error?.name || "JavaScript Error",
+          message: event.message || "No message provided",
           stackTrace:
             event.error?.stack ||
-            `${event.filename || 'unknown'}:${event.lineno || 0}:${event.colno || 0}`,
+            `${event.filename || "unknown"}:${event.lineno || 0}:${event.colno || 0}`,
           metadata: {
             filename: event.filename,
             lineno: event.lineno,
             colno: event.colno,
           },
-        })
+        }),
       );
       return;
     }
@@ -400,23 +420,23 @@ const installGlobalHandlers = () => {
 
     const target = event.target as HTMLElement | undefined;
     const resourceUrl =
-      target && 'src' in target
+      target && "src" in target
         ? String((target as HTMLImageElement | HTMLScriptElement).src)
-        : target && 'href' in target
+        : target && "href" in target
           ? String((target as HTMLLinkElement).href)
           : undefined;
 
     logException(
       buildExceptionPayload({
-        source: 'resource',
-        title: 'Resource Load Error',
-        message: resourceUrl || 'A browser resource failed to load',
-        stackTrace: '',
+        source: "resource",
+        title: "Resource Load Error",
+        message: resourceUrl || "A browser resource failed to load",
+        stackTrace: "",
         metadata: {
           tagName: target?.tagName,
           resourceUrl,
         },
-      })
+      }),
     );
   };
 
@@ -430,28 +450,28 @@ const installGlobalHandlers = () => {
 
     logException(
       buildExceptionPayload({
-        source: 'window.unhandledrejection',
-        title: error?.name || 'Unhandled Promise Rejection',
+        source: "window.unhandledrejection",
+        title: error?.name || "Unhandled Promise Rejection",
         message: error?.message || getRejectionMessage(reason),
-        stackTrace: error?.stack || 'No stack trace available',
+        stackTrace: error?.stack || "No stack trace available",
         metadata: {
           reason: error ? undefined : reason,
         },
-      })
+      }),
     );
   };
 
-  window.addEventListener('error', errorHandler, true);
-  window.addEventListener('unhandledrejection', rejectionHandler);
+  window.addEventListener("error", errorHandler, true);
+  window.addEventListener("unhandledrejection", rejectionHandler);
 
   return () => {
-    window.removeEventListener('error', errorHandler, true);
-    window.removeEventListener('unhandledrejection', rejectionHandler);
+    window.removeEventListener("error", errorHandler, true);
+    window.removeEventListener("unhandledrejection", rejectionHandler);
   };
 };
 
 export const setupExceptionTracking = (
-  options: SetupExceptionTrackingOptions
+  options: SetupExceptionTrackingOptions,
 ): CleanupExceptionTracking => {
   assertRequiredConfig(options);
 
@@ -491,15 +511,15 @@ export class ExceptionBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     logException(
       buildExceptionPayload({
-        source: 'react',
-        title: error.name || 'React Component Error',
-        message: error.message || 'No message provided',
-        stackTrace: error.stack ?? errorInfo.componentStack ?? '',
+        source: "react",
+        title: error.name || "React Component Error",
+        message: error.message || "No message provided",
+        stackTrace: error.stack ?? errorInfo.componentStack ?? "",
         metadata: {
           componentStack: errorInfo.componentStack,
         },
         extraData: this.props.extraData,
-      })
+      }),
     );
 
     this.props.onError?.(error, errorInfo);
@@ -509,7 +529,7 @@ export class ExceptionBoundary extends React.Component<
     const { error } = this.state;
 
     if (error) {
-      if (typeof this.props.fallback === 'function') {
+      if (typeof this.props.fallback === "function") {
         return this.props.fallback(error);
       }
 
