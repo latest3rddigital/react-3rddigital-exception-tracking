@@ -1,0 +1,55 @@
+{
+  "name": "react-3rddigital-exception-tracking",
+  "version": "0.1.0",
+  "description": "Lightweight exception tracking SDK for React web applications that reports JavaScript errors to 3rdDigital exception ingestion APIs.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "react",
+    "exception-tracking",
+    "error-boundary",
+    "javascript-errors",
+    "3rddigital"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/latest3rddigital/react-3rddigital-exception-tracking.git"
+  },
+  "author": "3rdDigital <sagar@3rddigital.com> (https://github.com/latest3rddigital)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/latest3rddigital/react-3rddigital-exception-tracking/issues"
+  },
+  "homepage": "https://github.com/latest3rddigital/react-3rddigital-exception-tracking#readme",
+  "peerDependencies": {
+    "react": ">=16.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^6.0.2"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "sideEffects": false
+}
