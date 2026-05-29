@@ -180,13 +180,13 @@ const getBrowserAndOs = (userAgent = "") => {
   else if (userAgent.includes("Chrome")) browserName = "Chrome";
   else if (userAgent.includes("Safari")) browserName = "Safari";
 
-  if (userAgent.includes("Win")) osName = "Windows";
+  if (userAgent.includes("Android")) osName = "Android";
+  else if (userAgent.includes("iPhone") || userAgent.includes("iPad"))
+    osName = "iOS";
+  else if (userAgent.includes("Win")) osName = "Windows";
   else if (userAgent.includes("Mac")) osName = "macOS";
   else if (userAgent.includes("X11") || userAgent.includes("Linux"))
     osName = "Linux";
-  else if (userAgent.includes("Android")) osName = "Android";
-  else if (userAgent.includes("iPhone") || userAgent.includes("iPad"))
-    osName = "iOS";
 
   return { browserName, osName };
 };
@@ -243,6 +243,10 @@ const getBackendSource = (
   }
 
   return runtimeInfo.isCapacitorNative ? "capacitor" : "react";
+};
+
+const isCapacitorPayload = (payload: ExceptionPayload) => {
+  return payload.source === "capacitor" || getRuntimeInfo().isCapacitorNative;
 };
 
 const getBrowserVersion = (userAgent: string, browserName: string) => {
@@ -557,7 +561,7 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
   }
 
   const runtimeInfo = getRuntimeInfo();
-  if (!runtimeInfo.isCapacitorNative) {
+  if (!isCapacitorPayload(payload)) {
     return payload;
   }
 
@@ -580,6 +584,7 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
   if (!deviceModule?.Device && !appModule?.App) {
     return {
       ...payload,
+      browserInfo: {},
       metadata: {
         ...payload.metadata,
         capacitorDetails: "not-installed",
@@ -695,6 +700,7 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
   } catch (error) {
     return {
       ...payload,
+      browserInfo: {},
       metadata: {
         ...payload.metadata,
         capacitorDetails: "failed",
@@ -706,8 +712,9 @@ const enrichPayloadWithCapacitor = async (payload: ExceptionPayload) => {
 };
 
 const enrichPayload = async (payload: ExceptionPayload) => {
+  const isCapacitor = isCapacitorPayload(payload);
   const [userAgentHighEntropyData, storageInfo] = await Promise.all([
-    getUserAgentHighEntropyData(),
+    isCapacitor ? Promise.resolve(undefined) : getUserAgentHighEntropyData(),
     getStorageEstimate(),
   ]);
   const capacitorPayload = await enrichPayloadWithCapacitor({
@@ -719,7 +726,7 @@ const enrichPayload = async (payload: ExceptionPayload) => {
     },
   });
 
-  if (!userAgentHighEntropyData) {
+  if (isCapacitor || !userAgentHighEntropyData) {
     return capacitorPayload;
   }
 

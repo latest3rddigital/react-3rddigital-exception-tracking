@@ -44,16 +44,16 @@ const getBrowserAndOs = (userAgent = "") => {
         browserName = "Chrome";
     else if (userAgent.includes("Safari"))
         browserName = "Safari";
-    if (userAgent.includes("Win"))
+    if (userAgent.includes("Android"))
+        osName = "Android";
+    else if (userAgent.includes("iPhone") || userAgent.includes("iPad"))
+        osName = "iOS";
+    else if (userAgent.includes("Win"))
         osName = "Windows";
     else if (userAgent.includes("Mac"))
         osName = "macOS";
     else if (userAgent.includes("X11") || userAgent.includes("Linux"))
         osName = "Linux";
-    else if (userAgent.includes("Android"))
-        osName = "Android";
-    else if (userAgent.includes("iPhone") || userAgent.includes("iPad"))
-        osName = "iOS";
     return { browserName, osName };
 };
 const getFormattedOsName = (osName, osVersion) => {
@@ -104,6 +104,9 @@ const getBackendSource = (runtimeInfo) => {
         return currentConfig.source;
     }
     return runtimeInfo.isCapacitorNative ? "capacitor" : "react";
+};
+const isCapacitorPayload = (payload) => {
+    return payload.source === "capacitor" || getRuntimeInfo().isCapacitorNative;
 };
 const getBrowserVersion = (userAgent, browserName) => {
     const versionMatchers = {
@@ -335,7 +338,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
         return payload;
     }
     const runtimeInfo = getRuntimeInfo();
-    if (!runtimeInfo.isCapacitorNative) {
+    if (!isCapacitorPayload(payload)) {
         return payload;
     }
     const [deviceModule, appModule] = await Promise.all([
@@ -345,6 +348,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
     if (!deviceModule?.Device && !appModule?.App) {
         return {
             ...payload,
+            browserInfo: {},
             metadata: {
                 ...payload.metadata,
                 capacitorDetails: "not-installed",
@@ -449,6 +453,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
     catch (error) {
         return {
             ...payload,
+            browserInfo: {},
             metadata: {
                 ...payload.metadata,
                 capacitorDetails: "failed",
@@ -458,8 +463,9 @@ const enrichPayloadWithCapacitor = async (payload) => {
     }
 };
 const enrichPayload = async (payload) => {
+    const isCapacitor = isCapacitorPayload(payload);
     const [userAgentHighEntropyData, storageInfo] = await Promise.all([
-        getUserAgentHighEntropyData(),
+        isCapacitor ? Promise.resolve(undefined) : getUserAgentHighEntropyData(),
         getStorageEstimate(),
     ]);
     const capacitorPayload = await enrichPayloadWithCapacitor({
@@ -470,7 +476,7 @@ const enrichPayload = async (payload) => {
             storageInfo,
         },
     });
-    if (!userAgentHighEntropyData) {
+    if (isCapacitor || !userAgentHighEntropyData) {
         return capacitorPayload;
     }
     const highEntropyModel = firstString(userAgentHighEntropyData.model);
