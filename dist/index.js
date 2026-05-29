@@ -345,7 +345,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
         const nativeOsName = firstString(deviceInfo?.operatingSystem);
         const nativeOsVersion = firstString(deviceInfo?.osVersion);
         const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
-        const dashboardDeviceName = firstString(deviceName, deviceModel, payload.deviceInfo.model);
+        const dashboardDeviceName = deviceInfo?.name ?? "";
         const nativeMemoryInfo = {
             usedMemory: deviceInfo?.memUsed,
             memUsed: deviceInfo?.memUsed,
