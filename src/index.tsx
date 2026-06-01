@@ -84,6 +84,8 @@ export type SetupExceptionTrackingOptions = {
   environment?: "development" | "production" | string;
   enabled?: boolean;
   allowedInDevMode?: boolean;
+  reactTrackingEnabled?: boolean;
+  capacitorTrackingEnabled?: boolean;
   installGlobalHandlers?: boolean;
   captureUnhandledRejections?: boolean;
   captureResourceErrors?: boolean;
@@ -108,6 +110,8 @@ type InternalConfig = Required<
   Pick<
     SetupExceptionTrackingOptions,
     | "enabled"
+    | "reactTrackingEnabled"
+    | "capacitorTrackingEnabled"
     | "installGlobalHandlers"
     | "captureUnhandledRejections"
     | "captureResourceErrors"
@@ -117,6 +121,8 @@ type InternalConfig = Required<
   Omit<
     SetupExceptionTrackingOptions,
     | "enabled"
+    | "reactTrackingEnabled"
+    | "capacitorTrackingEnabled"
     | "installGlobalHandlers"
     | "captureUnhandledRejections"
     | "captureResourceErrors"
@@ -245,6 +251,20 @@ const getBackendSource = (
   }
 
   return runtimeInfo.isCapacitorNative ? "capacitor" : "react";
+};
+
+const isTrackingEnabledForSource = (source: ExceptionSource) => {
+  if (!currentConfig?.enabled) {
+    return false;
+  }
+
+  return source === "capacitor"
+    ? currentConfig.capacitorTrackingEnabled
+    : currentConfig.reactTrackingEnabled;
+};
+
+const isTrackingEnabledForRuntime = () => {
+  return isTrackingEnabledForSource(getBackendSource(getRuntimeInfo()));
 };
 
 const isCapacitorPayload = (payload: ExceptionPayload) => {
@@ -850,13 +870,15 @@ export const setCurrentScreen = (screenName: string) => {
 export const logException = async (
   payload: ExceptionPayload,
 ): Promise<boolean> => {
-  if (!currentConfig?.enabled) {
+  const config = currentConfig;
+
+  if (!config || !isTrackingEnabledForSource(payload.source)) {
     return false;
   }
 
   const enrichedPayload = await enrichPayload(payload);
-  const preparedPayload = currentConfig.beforeSend
-    ? await currentConfig.beforeSend(enrichedPayload)
+  const preparedPayload = config.beforeSend
+    ? await config.beforeSend(enrichedPayload)
     : enrichedPayload;
 
   if (!preparedPayload) {
@@ -864,23 +886,20 @@ export const logException = async (
   }
 
   try {
-    const response = await fetch(
-      getIngestUrl(currentConfig.url, currentConfig.projectKey),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...currentConfig.headers,
-          "Api-Key": currentConfig.apiKey,
-        },
-        body: JSON.stringify(preparedPayload),
-        keepalive: true,
+    const response = await fetch(getIngestUrl(config.url, config.projectKey), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...config.headers,
+        "Api-Key": config.apiKey,
       },
-    );
+      body: JSON.stringify(preparedPayload),
+      keepalive: true,
+    });
 
     return response.ok;
   } catch (error) {
-    currentConfig.onError?.(error, preparedPayload);
+    config.onError?.(error, preparedPayload);
     return false;
   }
 };
@@ -889,6 +908,10 @@ export const captureException = async (
   error: unknown,
   extraData?: ExtraData,
 ) => {
+  if (!isTrackingEnabledForRuntime()) {
+    return false;
+  }
+
   const normalizedError =
     error instanceof Error ? error : new Error(String(error));
 
@@ -918,6 +941,10 @@ const installGlobalHandlers = () => {
   if (!isBrowser()) return undefined;
 
   const errorHandler = (event: ErrorEvent | Event) => {
+    if (!isTrackingEnabledForRuntime()) {
+      return;
+    }
+
     if (event instanceof ErrorEvent) {
       logException(
         buildExceptionPayload({
@@ -964,7 +991,10 @@ const installGlobalHandlers = () => {
   };
 
   const rejectionHandler = (event: PromiseRejectionEvent) => {
-    if (!currentConfig?.captureUnhandledRejections) {
+    if (
+      !currentConfig?.captureUnhandledRejections ||
+      !isTrackingEnabledForRuntime()
+    ) {
       return;
     }
 
@@ -996,15 +1026,19 @@ const installGlobalHandlers = () => {
 export const setupExceptionTracking = (
   options: SetupExceptionTrackingOptions,
 ): CleanupExceptionTracking => {
-  assertRequiredConfig(options);
-
   cleanupHandlers?.();
 
   const enabled =
     options.enabled ?? (options.allowedInDevMode ? true : !isDevMode());
 
+  if (enabled) {
+    assertRequiredConfig(options);
+  }
+
   currentConfig = {
     enabled,
+    reactTrackingEnabled: true,
+    capacitorTrackingEnabled: true,
     installGlobalHandlers: true,
     captureUnhandledRejections: true,
     captureResourceErrors: false,
@@ -1012,7 +1046,7 @@ export const setupExceptionTracking = (
     ...options,
   };
 
-  if (currentConfig.installGlobalHandlers) {
+  if (currentConfig.enabled && currentConfig.installGlobalHandlers) {
     cleanupHandlers = installGlobalHandlers();
   }
 
@@ -1033,18 +1067,20 @@ export class ExceptionBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    logException(
-      buildExceptionPayload({
-        source: "react",
-        title: error.name || "React Component Error",
-        message: error.message || "No message provided",
-        stackTrace: error.stack ?? errorInfo.componentStack ?? "",
-        metadata: {
-          componentStack: errorInfo.componentStack,
-        },
-        extraData: this.props.extraData,
-      }),
-    );
+    if (isTrackingEnabledForRuntime()) {
+      logException(
+        buildExceptionPayload({
+          source: "react",
+          title: error.name || "React Component Error",
+          message: error.message || "No message provided",
+          stackTrace: error.stack ?? errorInfo.componentStack ?? "",
+          metadata: {
+            componentStack: errorInfo.componentStack,
+          },
+          extraData: this.props.extraData,
+        }),
+      );
+    }
 
     this.props.onError?.(error, errorInfo);
   }

@@ -1,6 +1,6 @@
 {
   "name": "react-3rddigital-exception-tracking",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Lightweight exception tracking SDK for React web applications that reports JavaScript errors to 3rdDigital exception ingestion APIs.",
   "type": "module",
   "main": "./dist/index.cjs",

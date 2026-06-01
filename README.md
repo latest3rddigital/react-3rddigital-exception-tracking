@@ -28,6 +28,9 @@ setupExceptionTracking({
   appVersion: process.env.REACT_APP_VERSION,
   buildNumber: process.env.REACT_APP_BUILD_NUMBER,
   allowedInDevMode: false,
+  enabled: true,
+  reactTrackingEnabled: true,
+  capacitorTrackingEnabled: true,
   source: "auto",
   userInfo: {
     id: currentUser?.id,
@@ -52,6 +55,37 @@ The SDK posts to:
 ```
 
 If `url` already includes `/exceptions/ingest/{projectKey}`, that exact endpoint is used.
+
+## Enable or Disable Tracking
+
+Use `enabled` as the master switch. When it is `false`, the SDK does not require API configuration, does not install global handlers, does not build exception payloads for automatic captures, and does not call the API. This only disables this package; it does not override or disable other tools such as Firebase Crashlytics, Sentry, or any other error library.
+
+```ts
+setupExceptionTracking({
+  // ...
+  enabled: false,
+});
+```
+
+By default, tracking is disabled in `NODE_ENV=development`. Enable debug or local development reporting with:
+
+```ts
+setupExceptionTracking({
+  // ...
+  allowedInDevMode: true,
+});
+```
+
+You can also control React web and Capacitor native reporting separately:
+
+```ts
+setupExceptionTracking({
+  // ...
+  reactTrackingEnabled: true,
+  capacitorTrackingEnabled: false,
+  source: "auto",
+});
+```
 
 ## Backend Keys
 
@@ -117,24 +151,27 @@ clearExceptionContext(["role"]);
 
 ## Options
 
-| Option                       | Required | Description                                                            |
-| ---------------------------- | -------- | ---------------------------------------------------------------------- |
-| `url`                        | Yes      | Base API URL or full ingest URL.                                       |
-| `apiKey`                     | Yes      | Sent as the `Api-Key` header.                                          |
-| `projectKey`                 | Yes      | Project identifier used in the ingest URL and payload.                 |
-| `headers`                    | No       | Extra request headers.                                                 |
-| `appVersion`                 | No       | Version included in every payload. Defaults to `1.0.0`.                |
-| `buildNumber`                | No       | Build number included in every payload.                                |
-| `userInfo`                   | No       | User data stored in the backend `userInfo` field.                      |
-| `extraData`                  | No       | Static custom context merged into every payload.                       |
-| `allowedInDevMode`           | No       | Enables reporting in `NODE_ENV=development`. Defaults to `false`.      |
-| `installGlobalHandlers`      | No       | Captures `window.error` and promise rejections. Defaults to `true`.    |
-| `captureUnhandledRejections` | No       | Captures unhandled promise rejections. Defaults to `true`.             |
-| `captureResourceErrors`      | No       | Captures failed script/image/link loads. Defaults to `false`.          |
-| `enrichWithCapacitor`        | No       | Loads optional Capacitor details in native builds. Defaults to `true`. |
-| `source`                     | No       | `auto`, `react`, or `capacitor`. Defaults to `auto`.                   |
-| `beforeSend`                 | No       | Mutate or drop payloads before upload. Return `null` to skip.          |
-| `onError`                    | No       | Called when the SDK fails to upload an exception.                      |
+| Option                       | Required | Description                                                                                   |
+| ---------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `url`                        | Yes      | Base API URL or full ingest URL.                                                              |
+| `apiKey`                     | Yes      | Sent as the `Api-Key` header.                                                                 |
+| `projectKey`                 | Yes      | Project identifier used in the ingest URL and payload.                                        |
+| `headers`                    | No       | Extra request headers.                                                                        |
+| `appVersion`                 | No       | Version included in every payload. Defaults to `1.0.0`.                                       |
+| `buildNumber`                | No       | Build number included in every payload.                                                       |
+| `userInfo`                   | No       | User data stored in the backend `userInfo` field.                                             |
+| `extraData`                  | No       | Static custom context merged into every payload.                                              |
+| `enabled`                    | No       | Master switch for all reporting. `false` skips handlers and API calls.                        |
+| `allowedInDevMode`           | No       | Enables reporting in `NODE_ENV=development`. Defaults to `false`.                             |
+| `reactTrackingEnabled`       | No       | Enables React/browser reporting when the active source is `react`. Defaults to `true`.        |
+| `capacitorTrackingEnabled`   | No       | Enables native Capacitor reporting when the active source is `capacitor`. Defaults to `true`. |
+| `installGlobalHandlers`      | No       | Captures `window.error` and promise rejections. Defaults to `true`.                           |
+| `captureUnhandledRejections` | No       | Captures unhandled promise rejections. Defaults to `true`.                                    |
+| `captureResourceErrors`      | No       | Captures failed script/image/link loads. Defaults to `false`.                                 |
+| `enrichWithCapacitor`        | No       | Loads optional Capacitor details in native builds. Defaults to `true`.                        |
+| `source`                     | No       | `auto`, `react`, or `capacitor`. Defaults to `auto`.                                          |
+| `beforeSend`                 | No       | Mutate or drop payloads before upload. Return `null` to skip.                                 |
+| `onError`                    | No       | Called when the SDK fails to upload an exception.                                             |
 
 ## Payload
 

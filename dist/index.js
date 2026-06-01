@@ -107,6 +107,17 @@ const getBackendSource = (runtimeInfo) => {
     }
     return runtimeInfo.isCapacitorNative ? "capacitor" : "react";
 };
+const isTrackingEnabledForSource = (source) => {
+    if (!currentConfig?.enabled) {
+        return false;
+    }
+    return source === "capacitor"
+        ? currentConfig.capacitorTrackingEnabled
+        : currentConfig.reactTrackingEnabled;
+};
+const isTrackingEnabledForRuntime = () => {
+    return isTrackingEnabledForSource(getBackendSource(getRuntimeInfo()));
+};
 const isCapacitorPayload = (payload) => {
     return payload.source === "capacitor" || getRuntimeInfo().isCapacitorNative;
 };
@@ -602,23 +613,24 @@ export const setCurrentScreen = (screenName) => {
     setExceptionContext({ screenName });
 };
 export const logException = async (payload) => {
-    if (!currentConfig?.enabled) {
+    const config = currentConfig;
+    if (!config || !isTrackingEnabledForSource(payload.source)) {
         return false;
     }
     const enrichedPayload = await enrichPayload(payload);
-    const preparedPayload = currentConfig.beforeSend
-        ? await currentConfig.beforeSend(enrichedPayload)
+    const preparedPayload = config.beforeSend
+        ? await config.beforeSend(enrichedPayload)
         : enrichedPayload;
     if (!preparedPayload) {
         return false;
     }
     try {
-        const response = await fetch(getIngestUrl(currentConfig.url, currentConfig.projectKey), {
+        const response = await fetch(getIngestUrl(config.url, config.projectKey), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                ...currentConfig.headers,
-                "Api-Key": currentConfig.apiKey,
+                ...config.headers,
+                "Api-Key": config.apiKey,
             },
             body: JSON.stringify(preparedPayload),
             keepalive: true,
@@ -626,11 +638,14 @@ export const logException = async (payload) => {
         return response.ok;
     }
     catch (error) {
-        currentConfig.onError?.(error, preparedPayload);
+        config.onError?.(error, preparedPayload);
         return false;
     }
 };
 export const captureException = async (error, extraData) => {
+    if (!isTrackingEnabledForRuntime()) {
+        return false;
+    }
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     return logException(buildExceptionPayload({
         source: "manual",
@@ -656,6 +671,9 @@ const installGlobalHandlers = () => {
     if (!isBrowser())
         return undefined;
     const errorHandler = (event) => {
+        if (!isTrackingEnabledForRuntime()) {
+            return;
+        }
         if (event instanceof ErrorEvent) {
             logException(buildExceptionPayload({
                 source: "window.onerror",
@@ -692,7 +710,8 @@ const installGlobalHandlers = () => {
         }));
     };
     const rejectionHandler = (event) => {
-        if (!currentConfig?.captureUnhandledRejections) {
+        if (!currentConfig?.captureUnhandledRejections ||
+            !isTrackingEnabledForRuntime()) {
             return;
         }
         const reason = event.reason;
@@ -715,18 +734,22 @@ const installGlobalHandlers = () => {
     };
 };
 export const setupExceptionTracking = (options) => {
-    assertRequiredConfig(options);
     cleanupHandlers?.();
     const enabled = options.enabled ?? (options.allowedInDevMode ? true : !isDevMode());
+    if (enabled) {
+        assertRequiredConfig(options);
+    }
     currentConfig = {
         enabled,
+        reactTrackingEnabled: true,
+        capacitorTrackingEnabled: true,
         installGlobalHandlers: true,
         captureUnhandledRejections: true,
         captureResourceErrors: false,
         enrichWithCapacitor: true,
         ...options,
     };
-    if (currentConfig.installGlobalHandlers) {
+    if (currentConfig.enabled && currentConfig.installGlobalHandlers) {
         cleanupHandlers = installGlobalHandlers();
     }
     return () => {
@@ -743,16 +766,18 @@ export class ExceptionBoundary extends React.Component {
         return { error };
     }
     componentDidCatch(error, errorInfo) {
-        logException(buildExceptionPayload({
-            source: "react",
-            title: error.name || "React Component Error",
-            message: error.message || "No message provided",
-            stackTrace: error.stack ?? errorInfo.componentStack ?? "",
-            metadata: {
-                componentStack: errorInfo.componentStack,
-            },
-            extraData: this.props.extraData,
-        }));
+        if (isTrackingEnabledForRuntime()) {
+            logException(buildExceptionPayload({
+                source: "react",
+                title: error.name || "React Component Error",
+                message: error.message || "No message provided",
+                stackTrace: error.stack ?? errorInfo.componentStack ?? "",
+                metadata: {
+                    componentStack: errorInfo.componentStack,
+                },
+                extraData: this.props.extraData,
+            }));
+        }
         this.props.onError?.(error, errorInfo);
     }
     render() {

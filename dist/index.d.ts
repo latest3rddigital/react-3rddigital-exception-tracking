@@ -62,6 +62,8 @@ export type SetupExceptionTrackingOptions = {
     environment?: "development" | "production" | string;
     enabled?: boolean;
     allowedInDevMode?: boolean;
+    reactTrackingEnabled?: boolean;
+    capacitorTrackingEnabled?: boolean;
     installGlobalHandlers?: boolean;
     captureUnhandledRejections?: boolean;
     captureResourceErrors?: boolean;
