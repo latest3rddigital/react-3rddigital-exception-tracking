@@ -16,6 +16,12 @@ export type ExceptionPayloadInput = {
     extraData?: ExtraData;
     userInfo?: ExtraData;
 };
+export type CaptureExceptionOptions = {
+    extraData?: ExtraData;
+    metadata?: ExtraData;
+    exceptionData?: unknown;
+    userInfo?: ExtraData;
+};
 export type ExceptionPayload = {
     source: ExceptionSource;
     title: string;
@@ -82,9 +88,13 @@ export type ExceptionBoundaryProps = {
 export declare const buildExceptionPayload: ({ source, title, message, stackTrace, exceptionData, metadata, extraData, userInfo, }: ExceptionPayloadInput) => ExceptionPayload;
 export declare const setExceptionContext: (context: ExceptionContext) => void;
 export declare const clearExceptionContext: (keys?: Array<keyof ExceptionContext>) => void;
+export declare const setExceptionUserInfo: (userInfo: ExtraData) => void;
+export declare const clearExceptionUserInfo: (keys?: string[]) => void;
+export declare const setExceptionMetadata: (metadata: ExtraData) => void;
+export declare const clearExceptionMetadata: (keys?: string[]) => void;
 export declare const setCurrentScreen: (screenName: string) => void;
 export declare const logException: (payload: ExceptionPayload) => Promise<boolean>;
-export declare const captureException: (error: unknown, extraData?: ExtraData) => Promise<boolean>;
+export declare const captureException: (error: unknown, details?: ExtraData | CaptureExceptionOptions) => Promise<boolean>;
 export declare const setupExceptionTracking: (options: SetupExceptionTrackingOptions) => CleanupExceptionTracking;
 export declare class ExceptionBoundary extends React.Component<ExceptionBoundaryProps, {
     error: Error | null;
@@ -100,11 +110,15 @@ export declare class ExceptionBoundary extends React.Component<ExceptionBoundary
 }
 declare const _default: {
     setupExceptionTracking: (options: SetupExceptionTrackingOptions) => CleanupExceptionTracking;
-    captureException: (error: unknown, extraData?: ExtraData) => Promise<boolean>;
+    captureException: (error: unknown, details?: ExtraData | CaptureExceptionOptions) => Promise<boolean>;
     buildExceptionPayload: ({ source, title, message, stackTrace, exceptionData, metadata, extraData, userInfo, }: ExceptionPayloadInput) => ExceptionPayload;
     logException: (payload: ExceptionPayload) => Promise<boolean>;
     setExceptionContext: (context: ExceptionContext) => void;
     clearExceptionContext: (keys?: Array<keyof ExceptionContext>) => void;
+    setExceptionUserInfo: (userInfo: ExtraData) => void;
+    clearExceptionUserInfo: (keys?: string[]) => void;
+    setExceptionMetadata: (metadata: ExtraData) => void;
+    clearExceptionMetadata: (keys?: string[]) => void;
     setCurrentScreen: (screenName: string) => void;
     ExceptionBoundary: typeof ExceptionBoundary;
 };

@@ -37,6 +37,13 @@ export type ExceptionPayloadInput = {
   userInfo?: ExtraData;
 };
 
+export type CaptureExceptionOptions = {
+  extraData?: ExtraData;
+  metadata?: ExtraData;
+  exceptionData?: unknown;
+  userInfo?: ExtraData;
+};
+
 export type ExceptionPayload = {
   source: ExceptionSource;
   title: string;
@@ -131,6 +138,8 @@ type InternalConfig = Required<
 
 let currentConfig: InternalConfig | undefined;
 let currentContext: ExceptionContext = {};
+let currentUserInfo: ExtraData = {};
+let currentMetadata: ExtraData = {};
 let cleanupHandlers: CleanupExceptionTracking | undefined;
 
 const isBrowser = () =>
@@ -749,6 +758,17 @@ export const buildExceptionPayload = ({
   const performanceInfo = getPerformanceInfo();
   const memoryInfo = getMemoryInfo();
   const installedWebAppInfo = getInstalledWebAppInfo();
+  const defaultMetadata = {
+    framework: "react",
+    errorSource: source,
+    backendSource,
+    runtimeSource: runtimeInfo.runtime,
+    documentInfo,
+    historyInfo,
+    performanceInfo,
+    memoryInfo,
+    installedWebAppInfo,
+  };
 
   return {
     source: backendSource,
@@ -816,19 +836,13 @@ export const buildExceptionPayload = ({
     memoryInfo,
     userInfo: {
       ...configUserInfo,
+      ...currentUserInfo,
       ...userInfo,
     },
     metadata: {
+      ...defaultMetadata,
+      ...currentMetadata,
       ...metadata,
-      framework: "react",
-      errorSource: source,
-      backendSource,
-      runtimeSource: runtimeInfo.runtime,
-      documentInfo,
-      historyInfo,
-      performanceInfo,
-      memoryInfo,
-      installedWebAppInfo,
     },
     otherDetails: {
       documentInfo,
@@ -860,6 +874,42 @@ export const clearExceptionContext = (keys?: Array<keyof ExceptionContext>) => {
 
   keys.forEach((key) => {
     delete currentContext[key];
+  });
+};
+
+export const setExceptionUserInfo = (userInfo: ExtraData) => {
+  currentUserInfo = {
+    ...currentUserInfo,
+    ...userInfo,
+  };
+};
+
+export const clearExceptionUserInfo = (keys?: string[]) => {
+  if (!keys) {
+    currentUserInfo = {};
+    return;
+  }
+
+  keys.forEach((key) => {
+    delete currentUserInfo[key];
+  });
+};
+
+export const setExceptionMetadata = (metadata: ExtraData) => {
+  currentMetadata = {
+    ...currentMetadata,
+    ...metadata,
+  };
+};
+
+export const clearExceptionMetadata = (keys?: string[]) => {
+  if (!keys) {
+    currentMetadata = {};
+    return;
+  }
+
+  keys.forEach((key) => {
+    delete currentMetadata[key];
   });
 };
 
@@ -904,9 +954,24 @@ export const logException = async (
   }
 };
 
+const isCaptureExceptionOptions = (
+  value: ExtraData | CaptureExceptionOptions | undefined,
+): value is CaptureExceptionOptions => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return (
+    "extraData" in value ||
+    "metadata" in value ||
+    "exceptionData" in value ||
+    "userInfo" in value
+  );
+};
+
 export const captureException = async (
   error: unknown,
-  extraData?: ExtraData,
+  details?: ExtraData | CaptureExceptionOptions,
 ) => {
   if (!isTrackingEnabledForRuntime()) {
     return false;
@@ -914,6 +979,9 @@ export const captureException = async (
 
   const normalizedError =
     error instanceof Error ? error : new Error(String(error));
+  const captureDetails = isCaptureExceptionOptions(details)
+    ? details
+    : { extraData: details };
 
   return logException(
     buildExceptionPayload({
@@ -921,7 +989,10 @@ export const captureException = async (
       title: normalizedError.name || "Manual Exception",
       message: normalizedError.message || "No message provided",
       stackTrace: normalizedError.stack ?? "",
-      extraData,
+      exceptionData: captureDetails.exceptionData,
+      metadata: captureDetails.metadata,
+      extraData: captureDetails.extraData,
+      userInfo: captureDetails.userInfo,
     }),
   );
 };
@@ -1107,6 +1178,10 @@ export default {
   logException,
   setExceptionContext,
   clearExceptionContext,
+  setExceptionUserInfo,
+  clearExceptionUserInfo,
+  setExceptionMetadata,
+  clearExceptionMetadata,
   setCurrentScreen,
   ExceptionBoundary,
 };

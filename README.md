@@ -139,14 +139,54 @@ Attach data that should be included with future exception reports.
 
 ```ts
 import {
+  clearExceptionMetadata,
   clearExceptionContext,
+  clearExceptionUserInfo,
+  setExceptionMetadata,
   setCurrentScreen,
   setExceptionContext,
+  setExceptionUserInfo,
 } from "react-3rddigital-exception-tracking";
 
 setCurrentScreen("/projects");
 setExceptionContext({ userId: "123", role: "admin" });
+setExceptionUserInfo({ id: "123", email: "admin@example.com" });
+setExceptionMetadata({
+  api: {
+    endpoint: "/projects",
+    method: "GET",
+  },
+});
 clearExceptionContext(["role"]);
+clearExceptionUserInfo(["email"]);
+clearExceptionMetadata(["api"]);
+```
+
+Values are merged in this order, with later values taking priority:
+
+```txt
+setupExceptionTracking values -> setter values -> captureException values
+```
+
+For one manual report, pass richer details directly:
+
+```ts
+captureException(error, {
+  userInfo: {
+    id: currentUser.id,
+    email: currentUser.email,
+  },
+  metadata: {
+    api: {
+      endpoint: "/projects",
+      method: "POST",
+      statusCode: 500,
+    },
+  },
+  extraData: {
+    feature: "project-create",
+  },
+});
 ```
 
 ## Options
@@ -159,7 +199,7 @@ clearExceptionContext(["role"]);
 | `headers`                    | No       | Extra request headers.                                                                        |
 | `appVersion`                 | No       | Version included in every payload. Defaults to `1.0.0`.                                       |
 | `buildNumber`                | No       | Build number included in every payload.                                                       |
-| `userInfo`                   | No       | User data stored in the backend `userInfo` field.                                             |
+| `userInfo`                   | No       | Default user data stored in the backend `userInfo` field. Later `setExceptionUserInfo` and per-capture values override matching keys. |
 | `extraData`                  | No       | Static custom context merged into every payload.                                              |
 | `enabled`                    | No       | Master switch for all reporting. `false` skips handlers and API calls.                        |
 | `allowedInDevMode`           | No       | Enables reporting in `NODE_ENV=development`. Defaults to `false`.                             |
@@ -179,7 +219,7 @@ Each payload includes:
 
 - Error title, message, stack trace, backend source, detailed error source, timestamp, project key, app version, and build number.
 - Stable device id, friendly device model, page URL, screen name, browser, OS, device, screen, network, memory, storage, document, history, performance, and referrer details.
-- Static `userInfo`, static `extraData`, current context, per-call `extraData`, and metadata.
+- Static `userInfo`, dynamic `userInfo`, static `extraData`, current context, per-call `extraData`, dynamic metadata, and per-call metadata.
 
 ## Cleanup
 

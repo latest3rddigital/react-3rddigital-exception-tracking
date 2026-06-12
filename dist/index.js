@@ -3,6 +3,8 @@ import { Device } from "@capacitor/device";
 import React from "react";
 let currentConfig;
 let currentContext = {};
+let currentUserInfo = {};
+let currentMetadata = {};
 let cleanupHandlers;
 const isBrowser = () => typeof window !== "undefined" && typeof document !== "undefined";
 const getGlobalValue = (key) => {
@@ -500,6 +502,17 @@ export const buildExceptionPayload = ({ source = "manual", title, message, stack
     const performanceInfo = getPerformanceInfo();
     const memoryInfo = getMemoryInfo();
     const installedWebAppInfo = getInstalledWebAppInfo();
+    const defaultMetadata = {
+        framework: "react",
+        errorSource: source,
+        backendSource,
+        runtimeSource: runtimeInfo.runtime,
+        documentInfo,
+        historyInfo,
+        performanceInfo,
+        memoryInfo,
+        installedWebAppInfo,
+    };
     return {
         source: backendSource,
         title,
@@ -566,19 +579,13 @@ export const buildExceptionPayload = ({ source = "manual", title, message, stack
         memoryInfo,
         userInfo: {
             ...configUserInfo,
+            ...currentUserInfo,
             ...userInfo,
         },
         metadata: {
+            ...defaultMetadata,
+            ...currentMetadata,
             ...metadata,
-            framework: "react",
-            errorSource: source,
-            backendSource,
-            runtimeSource: runtimeInfo.runtime,
-            documentInfo,
-            historyInfo,
-            performanceInfo,
-            memoryInfo,
-            installedWebAppInfo,
         },
         otherDetails: {
             documentInfo,
@@ -607,6 +614,36 @@ export const clearExceptionContext = (keys) => {
     }
     keys.forEach((key) => {
         delete currentContext[key];
+    });
+};
+export const setExceptionUserInfo = (userInfo) => {
+    currentUserInfo = {
+        ...currentUserInfo,
+        ...userInfo,
+    };
+};
+export const clearExceptionUserInfo = (keys) => {
+    if (!keys) {
+        currentUserInfo = {};
+        return;
+    }
+    keys.forEach((key) => {
+        delete currentUserInfo[key];
+    });
+};
+export const setExceptionMetadata = (metadata) => {
+    currentMetadata = {
+        ...currentMetadata,
+        ...metadata,
+    };
+};
+export const clearExceptionMetadata = (keys) => {
+    if (!keys) {
+        currentMetadata = {};
+        return;
+    }
+    keys.forEach((key) => {
+        delete currentMetadata[key];
     });
 };
 export const setCurrentScreen = (screenName) => {
@@ -642,17 +679,32 @@ export const logException = async (payload) => {
         return false;
     }
 };
-export const captureException = async (error, extraData) => {
+const isCaptureExceptionOptions = (value) => {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    return ("extraData" in value ||
+        "metadata" in value ||
+        "exceptionData" in value ||
+        "userInfo" in value);
+};
+export const captureException = async (error, details) => {
     if (!isTrackingEnabledForRuntime()) {
         return false;
     }
     const normalizedError = error instanceof Error ? error : new Error(String(error));
+    const captureDetails = isCaptureExceptionOptions(details)
+        ? details
+        : { extraData: details };
     return logException(buildExceptionPayload({
         source: "manual",
         title: normalizedError.name || "Manual Exception",
         message: normalizedError.message || "No message provided",
         stackTrace: normalizedError.stack ?? "",
-        extraData,
+        exceptionData: captureDetails.exceptionData,
+        metadata: captureDetails.metadata,
+        extraData: captureDetails.extraData,
+        userInfo: captureDetails.userInfo,
     }));
 };
 const getRejectionMessage = (reason) => {
@@ -798,6 +850,10 @@ export default {
     logException,
     setExceptionContext,
     clearExceptionContext,
+    setExceptionUserInfo,
+    clearExceptionUserInfo,
+    setExceptionMetadata,
+    clearExceptionMetadata,
     setCurrentScreen,
     ExceptionBoundary,
 };

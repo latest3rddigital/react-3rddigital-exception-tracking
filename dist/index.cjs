@@ -3,12 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ExceptionBoundary = exports.setupExceptionTracking = exports.captureException = exports.logException = exports.setCurrentScreen = exports.clearExceptionContext = exports.setExceptionContext = exports.buildExceptionPayload = void 0;
+exports.ExceptionBoundary = exports.setupExceptionTracking = exports.captureException = exports.logException = exports.setCurrentScreen = exports.clearExceptionMetadata = exports.setExceptionMetadata = exports.clearExceptionUserInfo = exports.setExceptionUserInfo = exports.clearExceptionContext = exports.setExceptionContext = exports.buildExceptionPayload = void 0;
 const app_1 = require("@capacitor/app");
 const device_1 = require("@capacitor/device");
 const react_1 = __importDefault(require("react"));
 let currentConfig;
 let currentContext = {};
+let currentUserInfo = {};
+let currentMetadata = {};
 let cleanupHandlers;
 const isBrowser = () => typeof window !== "undefined" && typeof document !== "undefined";
 const getGlobalValue = (key) => {
@@ -506,6 +508,17 @@ const buildExceptionPayload = ({ source = "manual", title, message, stackTrace =
     const performanceInfo = getPerformanceInfo();
     const memoryInfo = getMemoryInfo();
     const installedWebAppInfo = getInstalledWebAppInfo();
+    const defaultMetadata = {
+        framework: "react",
+        errorSource: source,
+        backendSource,
+        runtimeSource: runtimeInfo.runtime,
+        documentInfo,
+        historyInfo,
+        performanceInfo,
+        memoryInfo,
+        installedWebAppInfo,
+    };
     return {
         source: backendSource,
         title,
@@ -572,19 +585,13 @@ const buildExceptionPayload = ({ source = "manual", title, message, stackTrace =
         memoryInfo,
         userInfo: {
             ...configUserInfo,
+            ...currentUserInfo,
             ...userInfo,
         },
         metadata: {
+            ...defaultMetadata,
+            ...currentMetadata,
             ...metadata,
-            framework: "react",
-            errorSource: source,
-            backendSource,
-            runtimeSource: runtimeInfo.runtime,
-            documentInfo,
-            historyInfo,
-            performanceInfo,
-            memoryInfo,
-            installedWebAppInfo,
         },
         otherDetails: {
             documentInfo,
@@ -618,6 +625,40 @@ const clearExceptionContext = (keys) => {
     });
 };
 exports.clearExceptionContext = clearExceptionContext;
+const setExceptionUserInfo = (userInfo) => {
+    currentUserInfo = {
+        ...currentUserInfo,
+        ...userInfo,
+    };
+};
+exports.setExceptionUserInfo = setExceptionUserInfo;
+const clearExceptionUserInfo = (keys) => {
+    if (!keys) {
+        currentUserInfo = {};
+        return;
+    }
+    keys.forEach((key) => {
+        delete currentUserInfo[key];
+    });
+};
+exports.clearExceptionUserInfo = clearExceptionUserInfo;
+const setExceptionMetadata = (metadata) => {
+    currentMetadata = {
+        ...currentMetadata,
+        ...metadata,
+    };
+};
+exports.setExceptionMetadata = setExceptionMetadata;
+const clearExceptionMetadata = (keys) => {
+    if (!keys) {
+        currentMetadata = {};
+        return;
+    }
+    keys.forEach((key) => {
+        delete currentMetadata[key];
+    });
+};
+exports.clearExceptionMetadata = clearExceptionMetadata;
 const setCurrentScreen = (screenName) => {
     (0, exports.setExceptionContext)({ screenName });
 };
@@ -653,17 +694,32 @@ const logException = async (payload) => {
     }
 };
 exports.logException = logException;
-const captureException = async (error, extraData) => {
+const isCaptureExceptionOptions = (value) => {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    return ("extraData" in value ||
+        "metadata" in value ||
+        "exceptionData" in value ||
+        "userInfo" in value);
+};
+const captureException = async (error, details) => {
     if (!isTrackingEnabledForRuntime()) {
         return false;
     }
     const normalizedError = error instanceof Error ? error : new Error(String(error));
+    const captureDetails = isCaptureExceptionOptions(details)
+        ? details
+        : { extraData: details };
     return (0, exports.logException)((0, exports.buildExceptionPayload)({
         source: "manual",
         title: normalizedError.name || "Manual Exception",
         message: normalizedError.message || "No message provided",
         stackTrace: normalizedError.stack ?? "",
-        extraData,
+        exceptionData: captureDetails.exceptionData,
+        metadata: captureDetails.metadata,
+        extraData: captureDetails.extraData,
+        userInfo: captureDetails.userInfo,
     }));
 };
 exports.captureException = captureException;
@@ -812,6 +868,10 @@ exports.default = {
     logException: exports.logException,
     setExceptionContext: exports.setExceptionContext,
     clearExceptionContext: exports.clearExceptionContext,
+    setExceptionUserInfo: exports.setExceptionUserInfo,
+    clearExceptionUserInfo: exports.clearExceptionUserInfo,
+    setExceptionMetadata: exports.setExceptionMetadata,
+    clearExceptionMetadata: exports.clearExceptionMetadata,
     setCurrentScreen: exports.setCurrentScreen,
     ExceptionBoundary,
 };
