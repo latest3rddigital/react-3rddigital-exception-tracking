@@ -3,6 +3,9 @@ export type ExtraData = Record<string, unknown>;
 export type ExceptionContext = ExtraData & {
     screenName?: string;
     userId?: string | number;
+    deviceId?: string;
+    deviceID?: string;
+    installationId?: string;
 };
 export type ExceptionSource = "react" | "capacitor";
 export type ExceptionDetailSource = "react" | "window.onerror" | "window.unhandledrejection" | "resource" | "manual";
@@ -63,6 +66,7 @@ export type SetupExceptionTrackingOptions = {
     headers?: Record<string, string>;
     extraData?: ExceptionContext;
     userInfo?: ExtraData;
+    deviceId?: string;
     appVersion?: string;
     buildNumber?: string;
     environment?: "development" | "production" | string;

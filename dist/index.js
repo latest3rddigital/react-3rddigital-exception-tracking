@@ -1,6 +1,7 @@
 import { App } from "@capacitor/app";
 import { Device } from "@capacitor/device";
 import React from "react";
+const DEVICE_ID_STORAGE_KEY = "3rddigital_exception_device_id";
 let currentConfig;
 let currentContext = {};
 let currentUserInfo = {};
@@ -200,15 +201,41 @@ const createId = () => {
     }
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
-const getDeviceId = () => {
-    const contextDeviceId = firstString(currentContext.deviceId, currentContext.deviceID, currentContext.installationId);
+const getStoredDeviceId = () => {
+    if (!isBrowser())
+        return undefined;
+    try {
+        return window.localStorage.getItem(DEVICE_ID_STORAGE_KEY) || undefined;
+    }
+    catch {
+        return undefined;
+    }
+};
+const storeDeviceId = (deviceId) => {
+    if (!isBrowser())
+        return;
+    try {
+        window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+    }
+    catch {
+        // Ignore storage errors (e.g. private browsing mode)
+    }
+};
+const getDeviceId = (extraData = {}) => {
+    const contextDeviceId = firstString(currentContext.deviceId, currentContext.deviceID, currentContext.installationId, currentConfig?.deviceId, currentConfig?.extraData?.deviceId, currentConfig?.extraData?.deviceID, currentConfig?.extraData?.installationId, extraData.deviceId, extraData.deviceID, extraData.installationId);
     if (contextDeviceId) {
         return contextDeviceId;
     }
     if (!isBrowser()) {
         return `server:${createId()}`;
     }
-    return `web:${createId()}`;
+    const storedDeviceId = getStoredDeviceId();
+    if (storedDeviceId) {
+        return storedDeviceId;
+    }
+    const newDeviceId = `web:${createId()}`;
+    storeDeviceId(newDeviceId);
+    return newDeviceId;
 };
 const firstString = (...values) => {
     const value = values.find((item) => item !== undefined && item !== null && item !== "");
@@ -353,6 +380,10 @@ const enrichPayloadWithCapacitor = async (payload) => {
         const deviceModel = firstString(deviceInfo?.model);
         const deviceInfoWithStorage = deviceInfo;
         const nativeDeviceId = firstString(deviceIdInfo?.identifier);
+        // Always fall back to the existing payload deviceId (which may be a
+        // persisted web device ID or one passed via context/config) so the
+        // backend can always count devices. Never send an empty string.
+        const resolvedDeviceId = nativeDeviceId || payload.deviceId;
         const nativeOsName = firstString(deviceInfo?.operatingSystem);
         const nativeOsVersion = firstString(deviceInfo?.osVersion);
         const nativeSystemName = getFormattedOsName(nativeOsName, nativeOsVersion);
@@ -380,7 +411,7 @@ const enrichPayloadWithCapacitor = async (payload) => {
             ...payload,
             appVersion: firstString(appInfo?.version, payload.appVersion) || "1.0.0",
             buildNumber: firstString(appInfo?.build, payload.buildNumber),
-            deviceId: nativeDeviceId || "",
+            deviceId: resolvedDeviceId,
             browserInfo: {},
             osInfo: {
                 name: nativeSystemName,
@@ -397,9 +428,9 @@ const enrichPayloadWithCapacitor = async (payload) => {
                 modelId: deviceModel,
                 capacitorModel: deviceModel,
                 rawDeviceInfo: deviceInfo,
-                deviceId: nativeDeviceId,
-                uniqueId: nativeDeviceId,
-                installationId: nativeDeviceId,
+                deviceId: resolvedDeviceId,
+                uniqueId: resolvedDeviceId,
+                installationId: resolvedDeviceId,
                 systemName: nativeSystemName,
                 systemVersion: nativeOsVersion,
                 isEmulator: deviceInfo?.isVirtual,
@@ -491,11 +522,16 @@ export const buildExceptionPayload = ({ source = "manual", title, message, stack
     const backendSource = getBackendSource(runtimeInfo);
     const configExtraData = currentConfig?.extraData ?? {};
     const configUserInfo = currentConfig?.userInfo ?? {};
+    const mergedExtraData = {
+        ...configExtraData,
+        ...currentContext,
+        ...extraData,
+    };
     const screenName = currentContext.screenName ||
         pathname ||
         "UnknownScreen";
     const timestamp = new Date().toISOString();
-    const deviceId = getDeviceId();
+    const deviceId = getDeviceId(mergedExtraData);
     const timezoneInfo = getTimezoneInfo();
     const documentInfo = getDocumentInfo();
     const historyInfo = getHistoryInfo();
@@ -594,11 +630,7 @@ export const buildExceptionPayload = ({ source = "manual", title, message, stack
             memoryInfo,
             installedWebAppInfo,
         },
-        extraData: {
-            ...configExtraData,
-            ...currentContext,
-            ...extraData,
-        },
+        extraData: mergedExtraData,
     };
 };
 export const setExceptionContext = (context) => {
